@@ -53,7 +53,7 @@ extern "C"
  * Execute power management procedure
  */
 extern void halSleep( uint32 osal_timer );
-
+extern void halSleep_Mentas( uint32 osal_timeout );//gj 0801
 /*
  * Used in mac_mcu
  */

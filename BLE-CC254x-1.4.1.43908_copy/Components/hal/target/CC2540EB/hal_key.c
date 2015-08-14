@@ -631,7 +631,9 @@ HAL_ISR_FUNCTION( halACCPort1Isr, P1INT_VECTOR )
 //  HAL_KEY_CPU_PORT_0_IF = 0;
   
   // HalLedSet( HAL_LED_1, HAL_LED_MODE_ON );
-  devInfoModelNumber[50]+=1;
+  
+  //
+   devInfoModelNumber[50]+=1;
     // clear interrupt flags (order is important)
   P1IFG = 0;
   P1IF = 0;

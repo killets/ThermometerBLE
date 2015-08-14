@@ -41,6 +41,10 @@
  * INCLUDES
  */
 
+// hal_key中 处理函数中devInfo等待去掉注释HAL_ISR_FUNCTION
+//0730 2015 edit basic function flow
+// before 0730 basic demo measuring tem and accs
+
 #include "bcomdef.h"
 #include "OSAL.h"
 #include "OSAL_PwrMgr.h"
@@ -433,7 +437,7 @@ void Thermometer_Init( uint8 task_id )
   // Setup the GAP Peripheral Role Profile
   {
     // Device doesn't start advertising until button is pressed
-    uint8 initial_advertising_enable = FALSE;
+    uint8 initial_advertising_enable = TRUE; //def: FALSE gj
 
     // By setting this to zero, the device will go into the waiting state after
     // being discoverable for 30.72 second, and will not being advertising again
@@ -539,10 +543,16 @@ void Thermometer_Init( uint8 task_id )
 #endif // #if defined( CC2540_MINIDK )  
   
   //gj
-  HalAdcInit();
+  //HalAdcInit();
+  GAP_SetParamValue(TGAP_LIM_ADV_TIMEOUT, 10);
   
   // Setup a delayed profile startup
   osal_set_event( thermometerTaskId, TH_START_DEVICE_EVT );
+  //HAL_TURN_ON_LED1();
+
+     //gj
+  osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, 20000 );
+ 
 }
 
 /*********************************************************************
@@ -558,6 +568,7 @@ void Thermometer_Init( uint8 task_id )
  *
  * @return  events not processed
  */
+int i=0;
 uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
 {
   
@@ -565,6 +576,60 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
   uint8 notify_interval;
   int32 n32;
   
+  
+  //gj 
+  if (events & TH_WAKEUP_EVT)
+  {
+
+    i++;
+   
+//   if(gapProfileState != GAPROLE_CONNECTED)
+//   {
+//     
+//    //HalLedSet( HAL_LED_1, HAL_LED_MODE_ON );
+//
+//      // OSAL_SET_CPU_INTO_SLEEP( 10000 );
+//
+//   }
+//   else
+//   {
+//      // HalLedSet( HAL_LED_1, HAL_LED_MODE_OFF );
+//     HAL_TURN_OFF_LED1();
+//   }
+    
+//    
+    
+//    if(i>=2){
+//      HAL_TURN_ON_LED2();
+//      osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, 15000 );
+//      halSleep(10000);
+//      HAL_TURN_ON_LED2();
+//      HAL_SYSTEM_RESET();
+//    }
+//     else
+//     {
+//       osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, 5000 );
+//        HAL_TURN_ON_LED1();
+//     }
+//   // halSleep(10000);
+//   //osal_set_event( thermometerTaskId, TH_START_DISCOVERY_EVT );
+   
+
+    
+    if ( gapProfileState != GAPROLE_CONNECTED ){
+    HAL_TURN_ON_LED2();
+    uint8 adv_enabled = TRUE;
+    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );
+    
+    }
+    else
+     HAL_TURN_OFF_LED2();
+    
+   osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, 20000);
+ 
+   return (events ^ TH_WAKEUP_EVT);
+  
+  }
   //gj temperature mesure 
   if ( events & TH_MEAS_EVT )
   {
@@ -655,6 +720,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
 
   if ( events & TH_START_DEVICE_EVT )
   {
+    
     // Start the Device
     VOID GAPRole_StartDevice( &thermometer_PeripheralCBs );
     
@@ -666,12 +732,13 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     VOID Accel_RegisterAppCBs( &keyFob_AccelCBs );
 #endif
     updateUI();
-     
+    //HalLedSet( HAL_LED_1, HAL_LED_MODE_OFF );
+   
     return ( events ^ TH_START_DEVICE_EVT );
   }
 
   if ( events & TH_START_DISCOVERY_EVT )
-  {
+  { //HalLedSet( HAL_LED_1, HAL_LED_MODE_ON ); //gj
     if ( timeAppPairingStarted )
     {
       // Postpone discovery until pairing completes
@@ -705,7 +772,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
   // Disconnect after sending measurement
   if ( events & TH_DISCONNECT_EVT )
   {
-    
+    //HalLedSet( HAL_LED_1, HAL_LED_MODE_ON );
     uint8 advEnable = FALSE;
     
     //disable advertising on disconnect
@@ -815,6 +882,12 @@ void record_start(void){
 //IT WAS STATIC
 void thermometer_HandleKeys( uint8 shift, uint8 keys )
 {
+
+}
+
+
+void thermometer_HandleKeys2( uint8 shift, uint8 keys )
+{
  
   bStatus_t status; 
   uint8 notify_interval;
@@ -919,6 +992,10 @@ void thermometer_HandleKeys( uint8 shift, uint8 keys )
     
   }
 }
+
+
+
+
 
 /*********************************************************************
  * @fn      thermometer_Advertise

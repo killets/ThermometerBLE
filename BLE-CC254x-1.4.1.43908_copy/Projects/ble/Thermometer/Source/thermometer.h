@@ -67,6 +67,7 @@ extern "C"
 #define TH_MEAS_EVT                                      0x0100 
 #define KFD_ACCEL_READ_EVT                               0x0200
 #define BMA250_FAKEkey_EVT                               0x0400  //hal_key.c magic num
+#define TH_WAKEUP_EVT                               0x0800  //hal_key.c magic num
   
 /*********************************************************************
  * MACROS

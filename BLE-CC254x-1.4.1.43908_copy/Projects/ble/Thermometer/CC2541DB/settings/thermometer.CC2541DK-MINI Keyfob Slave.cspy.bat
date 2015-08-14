@@ -25,7 +25,7 @@ if not "%1" == "" goto debugFile
 
 @echo on 
 
-"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.2\common\bin\cspybat" -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy_origin\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.general.xcl" --backend -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy_origin\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.driver.xcl" 
+"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.2\common\bin\cspybat" -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.general.xcl" --backend -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.driver.xcl" 
 
 @echo off 
 goto end 
@@ -34,7 +34,7 @@ goto end
 
 @echo on 
 
-"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.2\common\bin\cspybat" -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy_origin\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.general.xcl" "--debug_file=%1" --backend -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy_origin\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.driver.xcl" 
+"C:\Program Files (x86)\IAR Systems\Embedded Workbench 7.2\common\bin\cspybat" -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.general.xcl" "--debug_file=%1" --backend -f "C:\Texas Instruments\BLE-CC254x-1.4.1.43908_copy\Projects\ble\Thermometer\CC2541DB\settings\thermometer.CC2541DK-MINI Keyfob Slave.driver.xcl" 
 
 @echo off 
 :end
