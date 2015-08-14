@@ -44,6 +44,8 @@
 // hal_key中 处理函数中devInfo等待去掉注释HAL_ISR_FUNCTION
 //0730 2015 edit basic function flow
 // before 0730 basic demo measuring tem and accs
+#include <stdio.h>
+
 
 #include "bcomdef.h"
 #include "OSAL.h"
@@ -146,9 +148,29 @@ uint16 gapConnHandle;
 uint8 timeConfigDone;
 
 //gj LOCAL
+#define TH_adv_TIMEOUT 10 // seconds
+#define TH_wakeup_TIMEOUT 20000 //mseconds adv+ sleep
+
 static uint8 recorded_cnt;
 static bool recording;
 static uint16 recode_time_mins;
+
+#define startTIME 3  //24h 3AM
+#define	DAY             86400UL  // 24 hours * 60 minutes * 60 seconds
+static uint32 runningSeconds=0;
+static uint32 remainSeconds=0;
+static bool timeset_flag = false;
+
+#define bodyTempHiAdc 7777
+#define bodyTempLoAdc 1
+#define bodyTempTestCnt 4
+static uint8 bodyTempInrange = 0; // run 3 tests
+static uint8 bodyTempTest = bodyTempTestCnt; // run 3 tests
+
+
+
+//#define	DAY             86400UL  // 24 hours * 60 minutes * 60 seconds
+
 
 /*********************************************************************
  * EXTERNAL VARIABLES
@@ -308,6 +330,7 @@ static void updateUI( void );
 static void accelEnablerChangeCB( void );
 static void accelRead( void );
 
+static void record_start(void);
 
 /*******TEST MENTAS*********/
 //#include "hal_types.h"
@@ -489,6 +512,9 @@ void Thermometer_Init( uint8 task_id )
     thermometerIRange_t thermometerIRange= {4,60000};
     Thermometer_SetParameter( THERMOMETER_IRANGE, sizeof ( thermometerIRange_t ),
                               &thermometerIRange );
+    
+   // uint8 mytime = 20;
+    //Thermometer_SetParameter( THERMOMETER_MYTIME, sizeof ( uint8 ), &mytime );
   }
 
   // Stop config reads when done
@@ -543,15 +569,15 @@ void Thermometer_Init( uint8 task_id )
 #endif // #if defined( CC2540_MINIDK )  
   
   //gj
-  //HalAdcInit();
-  GAP_SetParamValue(TGAP_LIM_ADV_TIMEOUT, 10);
+  HalAdcInit();
+  GAP_SetParamValue(TGAP_LIM_ADV_TIMEOUT, TH_adv_TIMEOUT);
   
   // Setup a delayed profile startup
   osal_set_event( thermometerTaskId, TH_START_DEVICE_EVT );
   //HAL_TURN_ON_LED1();
 
      //gj
-  osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, 20000 );
+  osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, TH_wakeup_TIMEOUT);
  
 }
 
@@ -568,7 +594,7 @@ void Thermometer_Init( uint8 task_id )
  *
  * @return  events not processed
  */
-int i=0;
+
 uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
 {
   
@@ -581,8 +607,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
   if (events & TH_WAKEUP_EVT)
   {
 
-    i++;
-   
+
 //   if(gapProfileState != GAPROLE_CONNECTED)
 //   {
 //     
@@ -614,8 +639,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
 //   // halSleep(10000);
 //   //osal_set_event( thermometerTaskId, TH_START_DISCOVERY_EVT );
    
-
-    
+      
     if ( gapProfileState != GAPROLE_CONNECTED ){
     HAL_TURN_ON_LED2();
     uint8 adv_enabled = TRUE;
@@ -624,12 +648,52 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     }
     else
      HAL_TURN_OFF_LED2();
-    
-   osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, 20000);
- 
+
+    runningSeconds++;
+    if(timeset_flag&&(runningSeconds==remainSeconds/(TH_wakeup_TIMEOUT/1000)))
+    {
+      //HalLedSet( HAL_LED_1, HAL_LED_MODE_ON );
+        // Setup a bodyTempTest
+      bodyTempTest = bodyTempTestCnt;
+      bodyTempInrange=0;
+      osal_set_event( thermometerTaskId, TH_testBodyRange_EVT );
+    }
+   
+      osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, TH_wakeup_TIMEOUT);
    return (events ^ TH_WAKEUP_EVT);
   
   }
+  
+    //gj temperature mesure 
+  if ( events & TH_testBodyRange_EVT )
+  {    
+    //  HAL_TURN_ON_LED1();
+      uint32 temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
+      if(temperature>bodyTempLoAdc &&temperature<bodyTempHiAdc)
+        bodyTempInrange++;
+      
+      bodyTempTest--;
+      
+      if(bodyTempTest>0)
+      osal_start_timerEx( thermometerTaskId, TH_testBodyRange_EVT, 5000 );
+      else
+      {
+        if(bodyTempInrange>=2){
+          //start measurement
+             HAL_TURN_ON_LED1();
+          if(!recording){
+          recode_time_mins = 2;
+          record_start();
+        }
+        }
+        else
+          HAL_TURN_ON_LED2();
+      }
+      
+    return (events ^ TH_testBodyRange_EVT);
+  }
+  
+  
   //gj temperature mesure 
   if ( events & TH_MEAS_EVT )
   {
@@ -850,7 +914,7 @@ static void thermometer_ProcessOSALMsg( osal_event_hdr_t *pMsg )
 
 
 
-void record_start(void){
+static void record_start(void){
   for(int i = 0; i < 240; i++){
     devInfoModelNumber[i] = 0;
   }
@@ -1136,7 +1200,7 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
       {
         osal_start_timerEx( thermometerTaskId, TH_START_DISCOVERY_EVT, DEFAULT_DISCOVERY_DELAY );
       }
-      
+        //gj notice here
       //on connection initiate disconnect timer in 20 seconds
       //osal_start_timerEx( thermometerTaskId, TH_DISCONNECT_EVT, DEFAULT_TERMINATE_DELAY );        
         
@@ -1471,7 +1535,32 @@ static void thermometerCB(uint8 event)
     {
       temperatureIntervalConfig = false;
     } 
-    break;   
+    break;  
+    
+    //gj add 0802 for time set event
+  case THERMOMETER_MYTIME_SET:
+    UTCTimeStruct mytime;
+    //read stored interval value
+    Thermometer_GetParameter( THERMOMETER_MYTIME, &mytime ); 
+    // Update OSAL time
+    UTCTime mytimeSnds= osal_ConvertUTCSecs( &mytime );
+    osal_setClock(mytimeSnds);
+    timeset_flag = true;
+    runningSeconds = 0; // IMPORTATANT
+    
+    UTCTimeStruct time3AM = mytime;    
+    time3AM.hour=startTIME;
+    time3AM.minutes=0;
+    time3AM.seconds=0;
+    
+    if(mytime.hour > startTIME)
+      remainSeconds= DAY+ osal_ConvertUTCSecs( &time3AM )- mytimeSnds;
+    else
+      remainSeconds= osal_ConvertUTCSecs( &time3AM )- mytimeSnds;     
+
+    printf("%d ", remainSeconds);
+    
+    break;
    
   default:  
     break;

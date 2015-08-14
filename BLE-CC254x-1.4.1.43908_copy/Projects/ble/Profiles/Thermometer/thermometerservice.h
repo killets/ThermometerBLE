@@ -61,7 +61,10 @@ extern "C"
 #define THERMOMETER_INTERVAL_CHAR_CFG         4 
 #define THERMOMETER_IMEAS_CHAR_CFG            5  
 #define THERMOMETER_IRANGE                    6   
-
+#define THERMOMETER_MYTIME                    7   
+   
+   
+   
 // Position  in attribute array
 #define THERMOMETER_TEMP_VALUE_POS            2
 #define THERMOMETER_TEMP_CHAR_CONFIG_POS      3
@@ -69,11 +72,16 @@ extern "C"
 #define THERMOMETER_IMEAS_CHAR_CONFIG_POS     8
 #define THERMOMETER_INTERVAL_VALUE_POS        10
 #define THERMOMETER_INTERVAL_CHAR_CONFIG_POS  11   
+//gj add 0802
+#define THERMOMETER_MYTIME_VALUE_POS        14   
+#define THERMOMETER_MYTIME_CHAR_CONFIG_POS  15    
   
   // Length of bytes  
 #define THERMOMETER_INTERVAL_LEN              2
 #define THERMOMETER_TYPE_LEN                  1    
 #define THERMOMETER_IRANGE_LEN                (2 + 2) // low + high
+   //gj
+#define THERMOMETER_MYTIME_LEN                7  //MyTimeStruct
 
 // Maximum length of thermometer
 // measurement characteristic
@@ -108,7 +116,12 @@ extern "C"
 #define THERMOMETER_INTERVAL_IND_DISABLED     6  
 #define THERMOMETER_INTERVAL_SET              7
 #define THERMOMETER_TESTCMD_C                 8
-#define THERMOMETER_TESTCMD_F                 9  
+#define THERMOMETER_TESTCMD_F                 9 
+ //gj add 0802
+#define THERMOMETER_MYTIME_IND_ENABLED      10
+#define THERMOMETER_MYTIME_IND_DISABLED     11
+#define THERMOMETER_MYTIME_SET              12  
+  
 
 /*********************************************************************
  * TYPEDEFS

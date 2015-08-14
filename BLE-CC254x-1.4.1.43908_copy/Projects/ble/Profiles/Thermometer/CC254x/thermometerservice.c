@@ -37,6 +37,9 @@
   contact Texas Instruments Incorporated at www.TI.com.
 **************************************************************************************************/
 
+//gj 0802 add chars
+#define MY_TIME_UUID               0x2A22  // Current Time
+
 /*********************************************************************
  * INCLUDES
  */
@@ -98,6 +101,14 @@ CONST uint8 thermometerIntervalUUID[ATT_BT_UUID_SIZE] =
   LO_UINT16(MEAS_INTERVAL_UUID), HI_UINT16(MEAS_INTERVAL_UUID)
 };
 
+
+//gj add 8/2
+// Thermometer Measurement Interval
+CONST uint8 thermometerMyTimeUUID[ATT_BT_UUID_SIZE] =
+{ 
+  LO_UINT16(MY_TIME_UUID), HI_UINT16(MY_TIME_UUID)
+};
+
 // Thermometer Test Commands
 CONST uint8 thermometerIRangeUUID[ATT_BT_UUID_SIZE] =
 { 
@@ -150,8 +161,25 @@ static uint8  thermometerIntervalProps = GATT_PROP_INDICATE|GATT_PROP_READ|GATT_
 static uint16  thermometerInterval = 30;  //default
 static gattCharCfg_t *thermometerIntervalConfig;
 
+// To be used with
+typedef struct
+{
+  uint8 seconds;  // 0-59
+  uint8 minutes;  // 0-59
+  uint8 hour;     // 0-23
+  uint8 day;      // 0-30
+  uint8 month;    // 0-11
+  uint16 year;    // 2000+
+} MyTimeStruct;
+//gj add 0802
+static uint8  thermometerMyTimeProps = GATT_PROP_INDICATE|GATT_PROP_READ|GATT_PROP_WRITE;  //gj
+static MyTimeStruct thermometerMyTime;
+static gattCharCfg_t *thermometerMyTimeConfig;
 // Measurement Interval Range
 static thermometerIRange_t  thermometerIRange = {1,60};
+
+// Sunlight Service Characteristic 2 User Description                                     
+static uint8 sunlightServiceChar2UserDesp[] = "Sunlight Value Notification\0"; 
 
 /*********************************************************************
  * Profile Attributes - Table
@@ -270,6 +298,43 @@ static gattAttribute_t thermometerAttrTbl[] =
       0, 
       (uint8 *)&thermometerIRange 
     },
+    
+    
+     // INTERVAL-2-MYTIME
+    
+    //13 9. Characteristic Declaration
+    { 
+      { ATT_BT_UUID_SIZE, characterUUID },
+      GATT_PERMIT_READ, 
+      0,
+      &thermometerMyTimeProps 
+    },
+
+    //14 10. Characteristic Value
+    { 
+      { ATT_BT_UUID_SIZE, thermometerMyTimeUUID },
+      GATT_PERMIT_READ | GATT_PERMIT_AUTHEN_WRITE,
+      0, 
+      (uint8 *)&thermometerMyTime 
+    },
+    
+    //15 11. Characteristic Configuration
+    { 
+      { ATT_BT_UUID_SIZE, clientCharCfgUUID },
+      GATT_PERMIT_READ | GATT_PERMIT_WRITE, 
+      0, 
+      (uint8 *)&thermometerMyTimeConfig
+    }, 
+    
+    // Characteristic 2 User Description                            
+  {                                                               
+    { ATT_BT_UUID_SIZE, charUserDescUUID },                       
+    GATT_PERMIT_READ,                                             
+    0,                                                            
+    sunlightServiceChar2UserDesp                                         
+  },                
+    
+    
 };
 
 /*********************************************************************
@@ -346,10 +411,27 @@ bStatus_t Thermometer_AddService(uint32 services)
     return ( bleMemAllocError );
   }
   
+  
+  //gj add 802
+    // Allocate Client Characteristic Configuration table
+  thermometerMyTimeConfig = (gattCharCfg_t *)osal_mem_alloc( sizeof(gattCharCfg_t) *
+                                                               linkDBNumConns );
+  if ( thermometerMyTimeConfig == NULL )
+  {
+    // Free already allocated data
+    osal_mem_free( thermometerTempConfig );
+    osal_mem_free( thermometerIMeasConfig );
+    osal_mem_free( thermometerIntervalConfig);
+    
+    return ( bleMemAllocError );
+  }
+  
   // Initialize Client Characteristic Configuration attributes.
   GATTServApp_InitCharCfg(INVALID_CONNHANDLE, thermometerTempConfig);
   GATTServApp_InitCharCfg(INVALID_CONNHANDLE, thermometerIMeasConfig);
   GATTServApp_InitCharCfg(INVALID_CONNHANDLE, thermometerIntervalConfig);
+  //gj 0802
+  GATTServApp_InitCharCfg(INVALID_CONNHANDLE, thermometerMyTimeConfig);
   
   if (services & THERMOMETER_SERVICE)
   {
@@ -407,7 +489,18 @@ bStatus_t Thermometer_SetParameter(uint8 param, uint8 len, void *value)
       
     case THERMOMETER_INTERVAL:
       thermometerInterval = *((uint8*)value);
-      break;      
+      break;
+
+    //gj 0802
+    case THERMOMETER_MYTIME:
+       MyTimeStruct * tm =(MyTimeStruct*)value;
+       thermometerMyTime.seconds = tm->seconds; 
+       thermometerMyTime.minutes = tm->minutes;
+       thermometerMyTime.hour = tm->hour;
+       thermometerMyTime.day = tm->day;
+       thermometerMyTime.month = tm->month;
+       thermometerMyTime.year = tm->year;
+       break;     
  
     case THERMOMETER_TEMP_CHAR_CFG:      
       // Need connection handle
@@ -460,7 +553,11 @@ bStatus_t Thermometer_GetParameter(uint8 param, void *value)
       break;
 
     case THERMOMETER_INTERVAL:
-      *((uint8*)value) = thermometerInterval;
+      *((uint8*)value) = thermometerInterval;  //gj default is *((uint8*)
+      break;
+      
+     case THERMOMETER_MYTIME:
+      *((MyTimeStruct*)value) = thermometerMyTime;  //gj add 0802
       break;
     
     case THERMOMETER_IRANGE:
@@ -631,6 +728,18 @@ static bStatus_t Thermometer_ReadAttrCB(uint16 connHandle,
         pValue[0] = LO_UINT16(thermometerInterval);
         pValue[1] = HI_UINT16(thermometerInterval);
         break;
+        
+        //gj add 0802
+       case MY_TIME_UUID:
+        *pLen = THERMOMETER_MYTIME_LEN;
+        pValue[0] = thermometerMyTime.seconds;
+        pValue[1] = thermometerMyTime.minutes;
+        pValue[2] = thermometerMyTime.hour;
+        pValue[3] = thermometerMyTime.day;
+        pValue[4] = thermometerMyTime.month;
+        pValue[5] = LO_UINT16(thermometerMyTime.year);
+        pValue[6] = HI_UINT16(thermometerMyTime.year);
+        break;
 
       case GATT_VALID_RANGE_UUID:
         *pLen = THERMOMETER_IRANGE_LEN;
@@ -732,7 +841,28 @@ static bStatus_t Thermometer_WriteAttrCB(uint16 connHandle,
         {
           status = ATT_ERR_INVALID_HANDLE;
         }
-      }  
+      }
+      else if (pAttr->handle == thermometerAttrTbl[THERMOMETER_MYTIME_CHAR_CONFIG_POS].handle)
+      {
+        status = GATTServApp_ProcessCCCWriteReq(connHandle, pAttr, pValue, len,
+                                                offset, GATT_CLIENT_CFG_INDICATE);
+        if (status == SUCCESS)
+        {
+//          uint16 value = BUILD_UINT16(pValue[0], pValue[1]);
+//           
+//          // Notify the application.
+//          if (thermometerServiceCB != NULL)
+//          {
+//            (*thermometerServiceCB)((value == GATT_CFG_NO_OPERATION) ? 
+//                                     THERMOMETER_MYTIME_IND_DISABLED :   //gj 0802
+//                                     THERMOMETER_MYTIME_IND_ENABLED);
+//          }
+        }
+        else
+        {
+          status = ATT_ERR_INVALID_HANDLE;
+        }
+      }
       else
       {
           status = ATT_ERR_INVALID_VALUE_SIZE;
@@ -779,6 +909,60 @@ static bStatus_t Thermometer_WriteAttrCB(uint16 connHandle,
       }
       break;
     
+     case MY_TIME_UUID:
+      // Make sure it's not a blob operation.
+      if (offset == 0)
+      {
+        if (len == THERMOMETER_MYTIME_LEN)
+        {
+  //        uint16 value = BUILD_UINT16(pValue[0], pValue[1]);
+          
+          // Validate range.
+//          if ((value >= thermometerIRange.high) || 
+//              ((value <= thermometerIRange.low) && (value != 0)))
+//          {
+//            status = ATT_ERR_INVALID_VALUE;
+//          }
+        }
+        else
+        {
+          status = ATT_ERR_INVALID_VALUE_SIZE;
+        }
+      }
+      else
+      {
+        status = ATT_ERR_ATTR_NOT_LONG;
+      }
+      
+      // Write the value.
+      if (status == SUCCESS)
+      {
+        MyTimeStruct *pCurValue = (MyTimeStruct *)pAttr->pValue;        
+        
+//        *pCurValue = {
+//        pValue[0];
+//        pValue[1];
+//        pValue[2];
+//        pValue[3];
+//        pValue[4];  
+//        BUILD_UINT16(pValue[0], pValue[1]);       
+//        };
+        
+        pCurValue->seconds =  pValue[0];
+        pCurValue->minutes =  pValue[1];
+        pCurValue->hour =  pValue[2];
+        pCurValue->day =  pValue[3];
+        pCurValue->month =  pValue[4];
+        pCurValue->year =  BUILD_UINT16(pValue[5], pValue[6]);        
+        
+        // Notify application of write.
+        if (thermometerServiceCB != NULL)
+        {
+          (*thermometerServiceCB)(THERMOMETER_MYTIME_SET);
+        }
+      }
+      break;     
+      
     default:
       status = ATT_ERR_ATTR_NOT_FOUND;
       break;
