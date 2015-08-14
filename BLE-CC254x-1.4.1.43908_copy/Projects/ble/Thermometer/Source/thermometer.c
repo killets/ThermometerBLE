@@ -513,8 +513,8 @@ void Thermometer_Init( uint8 task_id )
     Thermometer_SetParameter( THERMOMETER_IRANGE, sizeof ( thermometerIRange_t ),
                               &thermometerIRange );
     
-   // uint8 mytime = 20;
-    //Thermometer_SetParameter( THERMOMETER_MYTIME, sizeof ( uint8 ), &mytime );
+//    UTCTimeStruct mytime = {20, 0, 0, 3, 8, 2015};
+//    Thermometer_SetParameter( THERMOMETER_MYTIME, sizeof ( UTCTimeStruct ), &mytime );
   }
 
   // Stop config reads when done

@@ -38,7 +38,7 @@
 **************************************************************************************************/
 
 //gj 0802 add chars
-#define MY_TIME_UUID               0x2A22  // Current Time
+#define MY_TIME_UUID               0xEE01  // Current Time
 
 /*********************************************************************
  * INCLUDES
@@ -71,10 +71,11 @@
  * GLOBAL VARIABLES
  */
 
-// Thermometer service
-CONST uint8 thermometerServUUID[ATT_BT_UUID_SIZE] =
+// Thermometer service   //ATT_BT_UUID_SIZE
+CONST uint8 thermometerServUUID[ATT_UUID_SIZE] =  
 { 
-  LO_UINT16(THERMOMETER_SERV_UUID), HI_UINT16(THERMOMETER_SERV_UUID)
+  //LO_UINT16(THERMOMETER_SERV_UUID), HI_UINT16(THERMOMETER_SERV_UUID)
+  TI_BASE_UUID_128(THERMOMETER_SERV_UUID),
 };
 
 // Thermometer temperature characteristic
@@ -104,9 +105,10 @@ CONST uint8 thermometerIntervalUUID[ATT_BT_UUID_SIZE] =
 
 //gj add 8/2
 // Thermometer Measurement Interval
-CONST uint8 thermometerMyTimeUUID[ATT_BT_UUID_SIZE] =
+CONST uint8 thermometerMyTimeUUID[ATT_UUID_SIZE] =
 { 
-  LO_UINT16(MY_TIME_UUID), HI_UINT16(MY_TIME_UUID)
+  //LO_UINT16(MY_TIME_UUID), HI_UINT16(MY_TIME_UUID)
+  TI_BASE_UUID_128(MY_TIME_UUID),
 };
 
 // Thermometer Test Commands
@@ -134,8 +136,8 @@ static thermometerServiceCB_t thermometerServiceCB;
  * Profile Attributes - variables
  */
 
-// Thermometer Service attribute
-static CONST gattAttrType_t thermometerService = { ATT_BT_UUID_SIZE, thermometerServUUID };
+// Thermometer Service attribute //ATT_BT_UUID_SIZE
+static CONST gattAttrType_t thermometerService = { ATT_UUID_SIZE, thermometerServUUID };
 
 // Client Characteristic configuration. Each client has its own instantiation
 // of the Client Characteristic Configuration. Reads of the Client Characteristic
@@ -312,7 +314,7 @@ static gattAttribute_t thermometerAttrTbl[] =
 
     //14 10. Characteristic Value
     { 
-      { ATT_BT_UUID_SIZE, thermometerMyTimeUUID },
+      { ATT_UUID_SIZE, thermometerMyTimeUUID },
       GATT_PERMIT_READ | GATT_PERMIT_AUTHEN_WRITE,
       0, 
       (uint8 *)&thermometerMyTime 
@@ -433,18 +435,24 @@ bStatus_t Thermometer_AddService(uint32 services)
   //gj 0802
   GATTServApp_InitCharCfg(INVALID_CONNHANDLE, thermometerMyTimeConfig);
   
-  if (services & THERMOMETER_SERVICE)
-  {
-    // Register GATT attribute list and CBs with GATT Server App.
+//  if (services & THERMOMETER_SERVICE)
+//  {
+//    // Register GATT attribute list and CBs with GATT Server App.
+//    status = GATTServApp_RegisterService(thermometerAttrTbl, 
+//                                         GATT_NUM_ATTRS(thermometerAttrTbl),
+//                                         GATT_MAX_ENCRYPT_KEY_SIZE,
+//                                         &thermometerCBs);
+//  }
+//  else
+//  {
+//    status = SUCCESS;
+//  }
+  
+   // Register GATT attribute list and CBs with GATT Server App.
     status = GATTServApp_RegisterService(thermometerAttrTbl, 
                                          GATT_NUM_ATTRS(thermometerAttrTbl),
                                          GATT_MAX_ENCRYPT_KEY_SIZE,
                                          &thermometerCBs);
-  }
-  else
-  {
-    status = SUCCESS;
-  }
 
   return (status);
 }
@@ -677,6 +685,33 @@ bStatus_t Thermometer_IMeasNotify(uint16 connHandle,
   return bleIncorrectMode;
 }
 
+
+// GJ 0803 ADD FOR CUSTOM PROFILE
+bStatus_t utilExtractUuid16(gattAttribute_t *pAttr, uint16 *pUuid)
+{
+  bStatus_t status = SUCCESS;
+
+  if (pAttr->type.len == ATT_BT_UUID_SIZE )
+  {
+    // 16-bit UUID direct
+    *pUuid = BUILD_UINT16( pAttr->type.uuid[0], pAttr->type.uuid[1]);
+//#ifdef GATT_TI_UUID_128_BIT
+  }
+  else if (pAttr->type.len == ATT_UUID_SIZE)
+  {
+    // 16-bit UUID extracted bytes 12 and 13
+    *pUuid = BUILD_UINT16( pAttr->type.uuid[12], pAttr->type.uuid[13]);
+//#endif
+  } else {
+    *pUuid = 0xFFFF;
+    status = FAILURE;
+  }
+
+  return status;
+}
+
+
+
 /*********************************************************************
  * @fn          Thermometer_ReadAttrCB
  *
@@ -697,6 +732,7 @@ static bStatus_t Thermometer_ReadAttrCB(uint16 connHandle,
                                         uint8 *pLen, uint16 offset,
                                         uint8 maxLen, uint8 method)
 {
+  uint16 uuid;
   bStatus_t status = SUCCESS;
 
   // If attribute permissions require authorization to read, return error.
@@ -711,11 +747,17 @@ static bStatus_t Thermometer_ReadAttrCB(uint16 connHandle,
   {
     return (ATT_ERR_ATTR_NOT_LONG);
   }
+  
+  if (utilExtractUuid16(pAttr,&uuid) == FAILURE) {                                      
+    // Invalid handle                                                                   
+    *pLen = 0;                                                                          
+    return ATT_ERR_INVALID_HANDLE;                                                      
+  }
  
-  if (pAttr->type.len == ATT_BT_UUID_SIZE)
-  {
-    // 16-bit UUID
-    uint16 uuid = BUILD_UINT16(pAttr->type.uuid[0], pAttr->type.uuid[1]);
+//  if (pAttr->type.len == ATT_BT_UUID_SIZE)
+//  {
+//    // 16-bit UUID
+//    uint16 uuid = BUILD_UINT16(pAttr->type.uuid[0], pAttr->type.uuid[1]);
     switch (uuid)
     {
       case TEMP_TYPE_UUID:
@@ -754,7 +796,7 @@ static bStatus_t Thermometer_ReadAttrCB(uint16 connHandle,
         status = ATT_ERR_ATTR_NOT_FOUND;
         break;
     }
-  }
+  //}
   
   return (status);
 }
@@ -778,9 +820,16 @@ static bStatus_t Thermometer_WriteAttrCB(uint16 connHandle,
                                          uint8 *pValue, uint8 len, 
                                          uint16 offset, uint8 method)
 {
+  uint16 uuid;
   bStatus_t status = SUCCESS;
 
-  uint16 uuid = BUILD_UINT16(pAttr->type.uuid[0], pAttr->type.uuid[1]);
+  //uint16 uuid = BUILD_UINT16(pAttr->type.uuid[0], pAttr->type.uuid[1]);
+  
+   if (utilExtractUuid16(pAttr,&uuid) == FAILURE) {                                       
+    // Invalid handle                                                                    
+    return ATT_ERR_INVALID_HANDLE;                                                       
+  } 
+  
   
   switch (uuid)
   {
