@@ -83,7 +83,7 @@ int main(void)
   /* Initialize LL */
 
   /* Initialize the operating system */
-  osal_init_system();
+  osal_init_system(); 
 
   /* Enable interrupts */
   HAL_ENABLE_INTERRUPTS();

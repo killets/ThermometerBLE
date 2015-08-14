@@ -39,6 +39,7 @@
 
 //gj 0802 add chars
 #define MY_TIME_UUID               0xEE01  // Current Time
+#define MY_LOG_UUID                0xEE02
 
 /*********************************************************************
  * INCLUDES
@@ -111,6 +112,16 @@ CONST uint8 thermometerMyTimeUUID[ATT_UUID_SIZE] =
   TI_BASE_UUID_128(MY_TIME_UUID),
 };
 
+
+//gj add 8/4
+// Thermometer Measurement Store
+CONST uint8 thermometerMyLogUUID[ATT_UUID_SIZE] =
+{ 
+  //LO_UINT16(MY_TIME_UUID), HI_UINT16(MY_TIME_UUID)
+  TI_BASE_UUID_128(MY_LOG_UUID),
+};
+
+
 // Thermometer Test Commands
 CONST uint8 thermometerIRangeUUID[ATT_BT_UUID_SIZE] =
 { 
@@ -163,6 +174,9 @@ static uint8  thermometerIntervalProps = GATT_PROP_INDICATE|GATT_PROP_READ|GATT_
 static uint16  thermometerInterval = 30;  //default
 static gattCharCfg_t *thermometerIntervalConfig;
 
+
+
+
 // To be used with
 typedef struct
 {
@@ -181,7 +195,17 @@ static gattCharCfg_t *thermometerMyTimeConfig;
 static thermometerIRange_t  thermometerIRange = {1,60};
 
 // Sunlight Service Characteristic 2 User Description                                     
-static uint8 sunlightServiceChar2UserDesp[] = "Sunlight Value Notification\0"; 
+static uint8 sunlightServiceChar2UserDesp[] = "Time Set\0"; 
+// Sunlight Service Characteristic 2 User Description                                     
+static uint8 therometerMyTimeDesp[] = "Offline Measurement Log\0"; 
+
+
+// Measurement Log
+// Site
+static uint8 thermometerMyLogProps = GATT_PROP_READ;
+
+uint8 thermometerMyLog[THERMOMETER_MYLOG_LEN]  = {0};
+
 
 /*********************************************************************
  * Profile Attributes - Table
@@ -334,7 +358,33 @@ static gattAttribute_t thermometerAttrTbl[] =
     GATT_PERMIT_READ,                                             
     0,                                                            
     sunlightServiceChar2UserDesp                                         
-  },                
+  },
+  
+  // MEASUREMENT TYPE  -- MyLog
+   
+    // 4. Characteristic Declaration
+    { 
+      { ATT_BT_UUID_SIZE, characterUUID },
+      GATT_PERMIT_READ, 
+      0,
+      &thermometerMyLogProps 
+    },
+
+    // 5. Characteristic Value
+    { 
+      { ATT_UUID_SIZE, thermometerMyLogUUID },
+      GATT_PERMIT_READ, 
+      0, 
+       (uint8 *)thermometerMyLog 
+    },
+    
+        // Characteristic 2 User Description                            
+  {                                                               
+    { ATT_BT_UUID_SIZE, charUserDescUUID },                       
+    GATT_PERMIT_READ,                                             
+    0,                                                            
+    therometerMyTimeDesp                                         
+  },
     
     
 };
@@ -494,13 +544,24 @@ bStatus_t Thermometer_SetParameter(uint8 param, uint8 len, void *value)
     case THERMOMETER_TYPE:
       thermometerType = *((uint8*)value);
       break;
-      
-    case THERMOMETER_INTERVAL:
-      thermometerInterval = *((uint8*)value);
+       
+    case THERMOMETER_INTERVAL:  //TODO gj 0804 it was uint8*
+      thermometerInterval = *((uint16*)value);
       break;
 
+    case THERMOMETER_MYLOG:
+      {
+        uint8 * p =(uint8*)value;
+      for(int i=0; i< THERMOMETER_MYLOG_LEN;i++)
+      {
+         thermometerMyLog[i] = *p++;
+      }    
+      
+      break; 
+      }
     //gj 0802
     case THERMOMETER_MYTIME:
+      {
        MyTimeStruct * tm =(MyTimeStruct*)value;
        thermometerMyTime.seconds = tm->seconds; 
        thermometerMyTime.minutes = tm->minutes;
@@ -509,7 +570,8 @@ bStatus_t Thermometer_SetParameter(uint8 param, uint8 len, void *value)
        thermometerMyTime.month = tm->month;
        thermometerMyTime.year = tm->year;
        break;     
- 
+      }
+      
     case THERMOMETER_TEMP_CHAR_CFG:      
       // Need connection handle
       //thermometerTempConfig.value = *((uint8*)value);
@@ -560,14 +622,26 @@ bStatus_t Thermometer_GetParameter(uint8 param, void *value)
       *((uint8*)value) = thermometerType;
       break;
 
-    case THERMOMETER_INTERVAL:
-      *((uint8*)value) = thermometerInterval;  //gj default is *((uint8*)
+    case THERMOMETER_INTERVAL:  //TODO
+      *((uint16*)value) = thermometerInterval;  //gj default is *((uint8*)
       break;
       
      case THERMOMETER_MYTIME:
       *((MyTimeStruct*)value) = thermometerMyTime;  //gj add 0802
       break;
-    
+      
+     case THERMOMETER_MYLOG:
+      //*((MyTimeStruct*)value) = thermometerMyTime;  //gj add 0802
+//      uint8 * p =(uint8*)value;
+//      for(int i=0; i< THERMOMETER_MYLOG_LEN;i++)
+//      {
+//         *p++ = thermometerMyLog[i];
+//      } 
+       
+       memcpy(value, thermometerMyLog, sizeof(thermometerMyLog));
+      
+      break;
+      
     case THERMOMETER_IRANGE:
       osal_memcpy(&value, &thermometerIRange, sizeof(thermometerIRange_t));
       break;
@@ -742,11 +816,12 @@ static bStatus_t Thermometer_ReadAttrCB(uint16 connHandle,
     return (ATT_ERR_INSUFFICIENT_AUTHOR);
   }
   
+  //gj 0803 when attr length > about 21, it works wrong, so delet it
   // Make sure it's not a blob operation (no attributes in the profile are long)
-  if (offset > 0)
-  {
-    return (ATT_ERR_ATTR_NOT_LONG);
-  }
+//  if (offset > 0)
+//  {
+//    return (ATT_ERR_ATTR_NOT_LONG);
+//  }
   
   if (utilExtractUuid16(pAttr,&uuid) == FAILURE) {                                      
     // Invalid handle                                                                   
@@ -782,6 +857,32 @@ static bStatus_t Thermometer_ReadAttrCB(uint16 connHandle,
         pValue[5] = LO_UINT16(thermometerMyTime.year);
         pValue[6] = HI_UINT16(thermometerMyTime.year);
         break;
+        
+      case MY_LOG_UUID:
+      //*((MyTimeStruct*)value) = thermometerMyTime;  //gj add 0802
+//        *pLen = THERMOMETER_MYLOG_LEN;
+//      for(int i=0; i< THERMOMETER_MYLOG_LEN;i++)
+//      {
+//         pValue[i] = thermometerMyLog[i];
+//      }
+      
+          // verify offset
+      if (offset > (sizeof(thermometerMyLog) - 1))
+      {
+        status = ATT_ERR_INVALID_OFFSET;
+      }
+      else
+      {
+        // determine read length (exclude null terminating character)
+        *pLen = MIN(maxLen, ((sizeof(thermometerMyLog) - 1) - offset));
+
+        // copy data
+        memcpy(pValue, &thermometerMyLog[offset], *pLen);
+      }
+      break;
+      
+      
+      break;
 
       case GATT_VALID_RANGE_UUID:
         *pLen = THERMOMETER_IRANGE_LEN;

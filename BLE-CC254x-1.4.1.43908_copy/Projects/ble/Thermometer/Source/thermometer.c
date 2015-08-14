@@ -153,7 +153,7 @@ uint8 timeConfigDone;
 
 static uint8 recorded_cnt;
 static bool recording;
-static uint16 recode_time_mins;
+//static uint16 recode_time_mins;
 
 #define startTIME 3  //24h 3AM
 #define	DAY             86400UL  // 24 hours * 60 minutes * 60 seconds
@@ -168,6 +168,7 @@ static uint8 bodyTempInrange = 0; // run 3 tests
 static uint8 bodyTempTest = bodyTempTestCnt; // run 3 tests
 
 
+#define bodyTempLogInteval 1000
 
 //#define	DAY             86400UL  // 24 hours * 60 minutes * 60 seconds
 
@@ -506,7 +507,7 @@ void Thermometer_Init( uint8 task_id )
 
   // Setup the Thermometer Characteristic Values
   {
-    uint8 thermometerSite = THERMOMETER_TYPE_MOUTH;
+    uint8 thermometerSite = THERMOMETER_TYPE_ARMPIT;
     Thermometer_SetParameter( THERMOMETER_TYPE, sizeof ( uint8 ), &thermometerSite );
     
     thermometerIRange_t thermometerIRange= {4,60000};
@@ -643,8 +644,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     if ( gapProfileState != GAPROLE_CONNECTED ){
     HAL_TURN_ON_LED2();
     uint8 adv_enabled = TRUE;
-    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );
-    
+    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );    
     }
     else
      HAL_TURN_OFF_LED2();
@@ -682,7 +682,6 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
           //start measurement
              HAL_TURN_ON_LED1();
           if(!recording){
-          recode_time_mins = 2;
           record_start();
         }
         }
@@ -692,34 +691,26 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
       
     return (events ^ TH_testBodyRange_EVT);
   }
-  
-  
-  //gj temperature mesure 
+    
+    //gj temperature mesure 
   if ( events & TH_MEAS_EVT )
-  {
-    if(recode_time_mins <= (5)){        // TEST MODE 
-      if(recorded_cnt < (recode_time_mins*12)){ //12*5000 =1 MINUS
-        osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, 5000 );
-      }else{
+  {   
+     if(recorded_cnt < THERMOMETER_MYLOG_LEN/2){
+        osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, bodyTempLogInteval );
+      }
+     else{
         recorded_cnt = 0;
         recording = 0;
+        return (events ^ TH_MEAS_EVT);
       }
-    }else{
-      if(recorded_cnt < (recode_time_mins/5)){
-        osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, (uint32)5*60000 );
-      }else{
-        recorded_cnt = 0;
-        recording = 0;
-      }
-    }
 
-    if( recording==1&&recorded_cnt < 120){
+    if( recording == 1 && recorded_cnt < THERMOMETER_MYLOG_LEN/2 ){
       uint32 temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
-      devInfoModelNumber[recorded_cnt*2] = LO_UINT16( temperature );
-      devInfoModelNumber[recorded_cnt*2+1] = HI_UINT16( temperature );
+      thermometerMyLog[recorded_cnt*2] = LO_UINT16( temperature );
+      thermometerMyLog[recorded_cnt*2+1] = HI_UINT16( temperature );
     }
+    
     recorded_cnt++;
-
     return (events ^ TH_MEAS_EVT);
   }
   
@@ -915,19 +906,17 @@ static void thermometer_ProcessOSALMsg( osal_event_hdr_t *pMsg )
 
 
 static void record_start(void){
-  for(int i = 0; i < 240; i++){
-    devInfoModelNumber[i] = 0;
+  for(int i = 0; i < THERMOMETER_MYLOG_LEN; i++){
+    thermometerMyLog[i] = 0;
   }
 
   //NPI_WriteTransport("interval_set!\n",16);
 
   recorded_cnt = 0;
   recording = 1;
-  if(recode_time_mins <= 5){        // test mode 
-    osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, 5000 );
-  }else{
-    osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, 300000 );
-  }
+    // Setup a delayed profile startup
+  osal_set_event( thermometerTaskId, TH_MEAS_EVT );
+  
 }
 
 
@@ -950,114 +939,112 @@ void thermometer_HandleKeys( uint8 shift, uint8 keys )
 }
 
 
-void thermometer_HandleKeys2( uint8 shift, uint8 keys )
-{
- 
-  bStatus_t status; 
-  uint8 notify_interval;
-  
-  if ( keys & HAL_KEY_SW_1 )
-  {
-    // set simulated measurement flag index
-    thermometerFlagsIdx+=1;
-    
-    if (thermometerFlagsIdx == FLAGS_IDX_MAX)
-    {
-      thermometerFlagsIdx = 0;
-    }  
-  }
-  
-  
-  //read stored interval value
-  Thermometer_GetParameter( THERMOMETER_INTERVAL, &notify_interval ); 
-
-  if(notify_interval == 0)
-  {
-    thMeasTimerRunning = FALSE;
-  }
-  
-  if ( keys & HAL_KEY_SW_2 )
-  {
-    // if device is not in a connection, pressing the right key should toggle
-    // advertising on and off. If timer is running, then will adv when meas is ready
-    if((gapProfileState != GAPROLE_CONNECTED) &&  (thMeasTimerRunning == FALSE))
-    {
-      uint8 current_adv_enabled_status;
-      uint8 new_adv_enabled_status;
-      
-      //Find the current GAP advertisement status
-      GAPRole_GetParameter( GAPROLE_ADVERT_ENABLED, &current_adv_enabled_status );
-      
-      if ( current_adv_enabled_status == FALSE )
-      {
-        new_adv_enabled_status = TRUE;
-      }
-      else
-      {
-        new_adv_enabled_status = FALSE;
-      }
-      
-      //change the GAP advertisement status to opposite of current status
-      GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &new_adv_enabled_status );   
-    }
-    else //timer is running, so allow simulated changes
-    {
-      
-      #if defined( T_RECODE ) //gj notice
-      
-        if(!recording){
-          recode_time_mins = 2;
-          record_start();
-        }
-      
-      #else     
-      //change temperature, remove single precision
-      if((thermometerCelcius) < 0X000175)
-      {
-        thermometerCelcius +=1;
-      }
-      else
-      {
-        uint16 thInterval = 30;
-        
-        thermometerCelcius = 0X000173;
-
-        //Simulate interval change
-        Thermometer_SetParameter( THERMOMETER_INTERVAL, THERMOMETER_INTERVAL_LEN,
-                                  &thInterval );
-        if(temperatureIntervalConfig == true) 
-        {
-          attHandleValueInd_t intervalInd;
-          
-          intervalInd.pValue = GATT_bm_alloc( gapConnHandle, ATT_HANDLE_VALUE_IND, 
-                                              THERMOMETER_INTERVAL_LEN, NULL );
-          if ( intervalInd.pValue != NULL )
-          {
-            intervalInd.len = THERMOMETER_INTERVAL_LEN;
-            intervalInd.pValue[0] = LO_UINT16(thInterval);
-            intervalInd.pValue[1] = HI_UINT16(thInterval);
-            intervalInd.handle = THERMOMETER_INTERVAL_VALUE_POS;
-          
-            status = Thermometer_IntervalIndicate( gapConnHandle, &intervalInd,
-                                                   thermometerTaskId );
-            // we can fail if there was pending meas or not connected
-            if (status != SUCCESS)
-            {
-              //queue indication
-              thermometerStoreIndications(&intervalInd);
-            }
-          }
-        }
-      }
-      #endif
-    }
-    
-    
-    
-  }
-}
-
-
+//void thermometer_HandleKeys2( uint8 shift, uint8 keys )
+//{
+// 
+//  bStatus_t status; 
+//  uint8 notify_interval;
+//  
+//  if ( keys & HAL_KEY_SW_1 )
+//  {
+//    // set simulated measurement flag index
+//    thermometerFlagsIdx+=1;
+//    
+//    if (thermometerFlagsIdx == FLAGS_IDX_MAX)
+//    {
+//      thermometerFlagsIdx = 0;
+//    }  
+//  }
+//  
+//  
+//  //read stored interval value
+//  Thermometer_GetParameter( THERMOMETER_INTERVAL, &notify_interval ); 
+//
+//  if(notify_interval == 0)
+//  {
+//    thMeasTimerRunning = FALSE;
+//  }
+//  
+//  if ( keys & HAL_KEY_SW_2 )
+//  {
+//    // if device is not in a connection, pressing the right key should toggle
+//    // advertising on and off. If timer is running, then will adv when meas is ready
+//    if((gapProfileState != GAPROLE_CONNECTED) &&  (thMeasTimerRunning == FALSE))
+//    {
+//      uint8 current_adv_enabled_status;
+//      uint8 new_adv_enabled_status;
+//      
+//      //Find the current GAP advertisement status
+//      GAPRole_GetParameter( GAPROLE_ADVERT_ENABLED, &current_adv_enabled_status );
+//      
+//      if ( current_adv_enabled_status == FALSE )
+//      {
+//        new_adv_enabled_status = TRUE;
+//      }
+//      else
+//      {
+//        new_adv_enabled_status = FALSE;
+//      }
+//      
+//      //change the GAP advertisement status to opposite of current status
+//      GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &new_adv_enabled_status );   
+//    }
+//    else //timer is running, so allow simulated changes
+//    {
+//      
+//      #if defined( T_RECODE ) //gj notice
+//      
+//        if(!recording){
+//          recode_time_mins = 2;
+//          record_start();
+//        }
+//      
+//      #else     
+//      //change temperature, remove single precision
+//      if((thermometerCelcius) < 0X000175)
+//      {
+//        thermometerCelcius +=1;
+//      }
+//      else
+//      {
+//        uint16 thInterval = 30;
+//        
+//        thermometerCelcius = 0X000173;
+//
+//        //Simulate interval change
+//        Thermometer_SetParameter( THERMOMETER_INTERVAL, THERMOMETER_INTERVAL_LEN,
+//                                  &thInterval );
+//        if(temperatureIntervalConfig == true) 
+//        {
+//          attHandleValueInd_t intervalInd;
+//          
+//          intervalInd.pValue = GATT_bm_alloc( gapConnHandle, ATT_HANDLE_VALUE_IND, 
+//                                              THERMOMETER_INTERVAL_LEN, NULL );
+//          if ( intervalInd.pValue != NULL )
+//          {
+//            intervalInd.len = THERMOMETER_INTERVAL_LEN;
+//            intervalInd.pValue[0] = LO_UINT16(thInterval);
+//            intervalInd.pValue[1] = HI_UINT16(thInterval);
+//            intervalInd.handle = THERMOMETER_INTERVAL_VALUE_POS;
+//          
+//            status = Thermometer_IntervalIndicate( gapConnHandle, &intervalInd,
+//                                                   thermometerTaskId );
+//            // we can fail if there was pending meas or not connected
+//            if (status != SUCCESS)
+//            {
+//              //queue indication
+//              thermometerStoreIndications(&intervalInd);
+//            }
+//          }
+//        }
+//      }
+//      #endif
+//    }
+//    
+//    
+//    
+//  }
+//}
 
 
 
@@ -1539,6 +1526,7 @@ static void thermometerCB(uint8 event)
     
     //gj add 0802 for time set event
   case THERMOMETER_MYTIME_SET:
+    {
     UTCTimeStruct mytime;
     //read stored interval value
     Thermometer_GetParameter( THERMOMETER_MYTIME, &mytime ); 
@@ -1558,9 +1546,10 @@ static void thermometerCB(uint8 event)
     else
       remainSeconds= osal_ConvertUTCSecs( &time3AM )- mytimeSnds;     
 
-    printf("%d ", remainSeconds);
+  //  printf("%d ", remainSeconds);
     
     break;
+    }
    
   default:  
     break;
@@ -1611,14 +1600,18 @@ static void performPeriodicTask( void )
  */
 static void performPeriodicImeasTask( void )
 {
-  
+  //gj 0804
+  uint8 measure_interval;
+  //read stored interval value
+  Thermometer_GetParameter( THERMOMETER_INTERVAL, &measure_interval ); 
+  int32 n32 = ((uint32)(measure_interval)) * (1000); 
   if (gapProfileState == GAPROLE_CONNECTED)
   {
     // send thermometer measurement notification
     thermometerImeasNotify();
     
     // Start interval timer (simulated fast measurement for display)
-    osal_start_timerEx( thermometerTaskId, TH_PERIODIC_IMEAS_EVT, 1000 );
+    osal_start_timerEx( thermometerTaskId, TH_PERIODIC_IMEAS_EVT, n32 );
   }
 }
 

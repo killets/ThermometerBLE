@@ -62,7 +62,7 @@ extern "C"
 #define THERMOMETER_IMEAS_CHAR_CFG            5  
 #define THERMOMETER_IRANGE                    6   
 #define THERMOMETER_MYTIME                    7   
-   
+#define THERMOMETER_MYLOG                     8    
    
    
 // Position  in attribute array
@@ -106,7 +106,9 @@ extern "C"
   
 // Thermometer Service bit fields
 #define THERMOMETER_SERVICE                   0x00000001
-
+#define THERMOMETER_MYLOG_LEN                400  //MyTimeStruct
+  
+  
 // Callback events
 #define THERMOMETER_TEMP_IND_ENABLED          1
 #define THERMOMETER_TEMP_IND_DISABLED         2
@@ -122,6 +124,7 @@ extern "C"
 #define THERMOMETER_MYTIME_IND_DISABLED     11
 #define THERMOMETER_MYTIME_SET              12  
   
+extern uint8 thermometerMyLog[THERMOMETER_MYLOG_LEN];
 
 /*********************************************************************
  * TYPEDEFS
