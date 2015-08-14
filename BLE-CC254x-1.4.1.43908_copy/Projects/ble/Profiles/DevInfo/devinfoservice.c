@@ -153,8 +153,13 @@ static uint8 devInfoSystemId[DEVINFO_SYSTEM_ID_LEN] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Model Number String characteristic
 static uint8 devInfoModelNumberProps = GATT_PROP_READ;
-static const uint8 devInfoModelNumber[] = "Model Number";
-
+#if defined T_RECODE
+uint8 devInfoModelNumber[241] = "Model Number"; //gj
+#else
+static const uint8 devInfoModelNumber[241] = "Model Number";  //gj
+//uint8 devInfoModelNumber[241] = "Model Number";  //gj
+#endif
+//static const uint8 devInfoModelNumber[241] = "Model Number";  //gj
 // Serial Number String characteristic
 static uint8 devInfoSerialNumberProps = GATT_PROP_READ;
 static const uint8 devInfoSerialNumber[] = "Serial Number";

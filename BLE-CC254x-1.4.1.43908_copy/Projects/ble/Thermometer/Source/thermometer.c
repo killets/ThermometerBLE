@@ -63,9 +63,22 @@
 #include "timeapp.h"
 #include "OSAL_Clock.h"
 
+//gj ACC
+#include "math.h"
+#include "bma250.h"
+#include "accelerometer.h"
+// How often (in ms) to read the accelerometer
+#define ACCEL_READ_PERIOD                     50
+
+// Minimum change in accelerometer before sending a notification
+#define ACCEL_CHANGE_THRESHOLD                5
 /*********************************************************************
  * MACROS
  */
+//GJ
+//#define T_RECODE
+
+
 
 /*********************************************************************
  * CONSTANTS
@@ -127,6 +140,11 @@ uint8 thermometerTaskId;
 uint16 gapConnHandle;
 
 uint8 timeConfigDone;
+
+//gj LOCAL
+static uint8 recorded_cnt;
+static bool recording;
+static uint16 recode_time_mins;
 
 /*********************************************************************
  * EXTERNAL VARIABLES
@@ -262,6 +280,11 @@ static void thermometer_Advertise( void );
 static void thermometerSendStoredMeas();
 
 
+//gj ACC
+// Accelerometer Profile Parameters
+static uint8 accelEnabler = FALSE;
+
+
 /*********************************************************************
  * LOCAL FUNCTIONS
  */
@@ -276,6 +299,78 @@ static void thermometerMeasIndicate(void);
 static void thermometerCB(uint8 event);
 static void thermometerStoreIndications(attHandleValueInd_t* pInd);
 static void updateUI( void );
+
+//GJ ACC
+static void accelEnablerChangeCB( void );
+static void accelRead( void );
+
+
+/*******TEST MENTAS*********/
+//#include "hal_types.h"
+//// Include Name definitions of individual bits and bit-fields in the CC254x device registers.
+//#include "ioCC254x_bitdef.h"
+//uint16 ADC_READ()
+//{
+//   uint16  adc_result;
+//    /****************************************************************************
+//    * Clock setup
+//    * See basic software example "clk_xosc_cc254x"
+//    */
+//  
+//    // Set system clock source to HS XOSC, with no pre-scaling.
+//    CLKCONCMD = (CLKCONCMD & ~(CLKCON_OSC | CLKCON_CLKSPD)) | CLKCON_CLKSPD_32M;
+//    while (CLKCONSTA & CLKCON_OSC);   // Wait until clock source has changed
+//  
+//    /* Note the 32 kHz RCOSC starts calibrating, if not disabled. */
+//  
+//  
+//    /****************************************************************************
+//    * I/O-Port configuration
+//    * PIN0_7 is configured to an ADC input pin.
+//    */
+//
+//    // Set [APCFG.APCFG0 = 1].
+//    APCFG |= APCFG_APCFG0;
+//
+//  
+//    /****************************************************************************
+//    * ADC configuration:
+//    *  - [ADCCON1.ST] triggered
+//    *  - 12 bit resolution
+//    *  - Single-ended
+//    *  - Single-channel, due to only 1 pin is selected in the APCFG register
+//    *  - Reference voltage is VDD on AVDD pin
+//    */
+//
+//    // Set [ADCCON1.STSEL] according to ADC configuration.
+//    ADCCON1 = (ADCCON1 & ~ADCCON1_STSEL) | ADCCON1_STSEL_ST;
+//
+//    // Set [ADCCON2.SREF/SDIV/SCH] according to ADC configuration.
+//    ADCCON2 = ADCCON2_SREF_AVDD | ADCCON2_SDIV_512 | ADCCON2_SCH_AIN0;
+//
+//  
+//    /****************************************************************************
+//    * ADC conversion :
+//    * The ADC conversion is triggered by setting [ADCCON1.ST = 1].
+//    * The CPU will then poll [ADCCON1.EOC] until the conversion is completed.
+//    */
+//
+//    // Set [ADCCON1.ST] and await completion (ADCCON1.EOC = 1). 
+//    ADCCON1 |= ADCCON1_ST;
+//    while( !(ADCCON1 & ADCCON1_EOC));
+//
+//    /* Store the ADC result from the ADCH/L register to the adc_result variable.
+//    * The conversion result resides in the MSB section of the combined ADCH and
+//    * ADCL registers.
+//    */
+//    adc_result = (ADCL >> 4);
+//    adc_result |= (ADCH << 4);
+//
+//    // End function with infinite loop (for debugging purposes). 
+//   // while(1);
+//    return adc_result;
+//}
+
 
 /*********************************************************************
  * PROFILE CALLBACKS
@@ -293,7 +388,20 @@ static gapBondCBs_t thermometer_BondMgrCBs =
 {
   timeAppPasscodeCB,
   timeAppPairStateCB
+  //NULL,  //GJ
+  //NULL   //GJ
 };
+
+
+
+//gj
+#if defined (BMA_250)
+// Accelerometer Profile Callbacks
+static accelCBs_t keyFob_AccelCBs =
+{
+  accelEnablerChangeCB,          // Called when Enabler attribute changes
+};
+#endif
 
 /*********************************************************************
  * PUBLIC FUNCTIONS
@@ -393,7 +501,11 @@ void Thermometer_Init( uint8 task_id )
   GATTServApp_AddService( GATT_ALL_SERVICES ); // GATT attributes
   Thermometer_AddService( GATT_ALL_SERVICES );
   DevInfo_AddService( );
-
+  //GJ
+#if defined(BMA_250)
+  Accel_AddService( GATT_ALL_SERVICES );      // Accelerometer Profile
+#endif
+  
   // Register for Thermometer service callback
   Thermometer_Register ( thermometerCB );
   
@@ -420,8 +532,14 @@ void Thermometer_Init( uint8 task_id )
   P0 = 0x03; // All pins on port 0 to low except for P0.0 and P0.1 (buttons)
   P1 = 0;   // All pins on port 1 to low
   P2 = 0;   // All pins on port 2 to low  
+  
+  
+
 
 #endif // #if defined( CC2540_MINIDK )  
+  
+  //gj
+  HalAdcInit();
   
   // Setup a delayed profile startup
   osal_set_event( thermometerTaskId, TH_START_DEVICE_EVT );
@@ -447,6 +565,78 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
   uint8 notify_interval;
   int32 n32;
   
+  //gj temperature mesure 
+  if ( events & TH_MEAS_EVT )
+  {
+    if(recode_time_mins <= (5)){        // TEST MODE 
+      if(recorded_cnt < (recode_time_mins*12)){ //12*5000 =1 MINUS
+        osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, 5000 );
+      }else{
+        recorded_cnt = 0;
+        recording = 0;
+      }
+    }else{
+      if(recorded_cnt < (recode_time_mins/5)){
+        osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, (uint32)5*60000 );
+      }else{
+        recorded_cnt = 0;
+        recording = 0;
+      }
+    }
+
+    if( recording==1&&recorded_cnt < 120){
+      uint32 temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
+      devInfoModelNumber[recorded_cnt*2] = LO_UINT16( temperature );
+      devInfoModelNumber[recorded_cnt*2+1] = HI_UINT16( temperature );
+    }
+    recorded_cnt++;
+
+    return (events ^ TH_MEAS_EVT);
+  }
+  
+  //gj
+#if defined (BMA_250)
+  if ( events & KFD_ACCEL_READ_EVT )
+  {
+    bStatus_t status = Accel_GetParameter( ACCEL_ENABLER, &accelEnabler );
+
+    if (status == SUCCESS)
+    {
+      if ( accelEnabler )
+      {
+        // Restart timer
+        if ( ACCEL_READ_PERIOD )
+        {
+          osal_start_timerEx( thermometerTaskId, KFD_ACCEL_READ_EVT, ACCEL_READ_PERIOD );
+        }
+
+        // Read accelerometer data
+        accelRead();
+      }
+      else
+      {
+        // Stop the acceleromter
+        osal_stop_timerEx( thermometerTaskId, KFD_ACCEL_READ_EVT);
+      }
+    }
+    else
+    {
+        //??
+    }
+    return (events ^ KFD_ACCEL_READ_EVT);
+  }
+  
+    if ( events & BMA250_FAKEkey_EVT )
+  {
+    HalLedSet( HAL_LED_1, HAL_LED_MODE_TOGGLE );
+    thermometer_HandleKeys( 0, 0x02 ); //fake sw2
+    
+    // return unprocessed events
+    return (events ^ SYS_EVENT_MSG);
+  }
+  
+#endif  
+  
   if ( events & SYS_EVENT_MSG )
   {
     uint8 *pMsg;
@@ -470,7 +660,11 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     
     // Register with bond manager after starting device
     VOID GAPBondMgr_Register( &thermometer_BondMgrCBs );
-    
+//gj ACC
+#if defined(BMA_250)
+     // Start the Accelerometer Profile
+    VOID Accel_RegisterAppCBs( &keyFob_AccelCBs );
+#endif
     updateUI();
      
     return ( events ^ TH_START_DEVICE_EVT );
@@ -521,7 +715,10 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     GAPRole_TerminateConnection();
 
     return (events ^ TH_DISCONNECT_EVT);
-  }  
+  }
+
+
+  
   
   if ( events & TH_CCC_UPDATE_EVT )
     
@@ -554,7 +751,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
       }
       return (events ^ TH_CCC_UPDATE_EVT);
     }
-  
+   
    return 0;
 }
 
@@ -583,6 +780,26 @@ static void thermometer_ProcessOSALMsg( osal_event_hdr_t *pMsg )
   }
 }
 
+
+
+
+void record_start(void){
+  for(int i = 0; i < 240; i++){
+    devInfoModelNumber[i] = 0;
+  }
+
+  //NPI_WriteTransport("interval_set!\n",16);
+
+  recorded_cnt = 0;
+  recording = 1;
+  if(recode_time_mins <= 5){        // test mode 
+    osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, 5000 );
+  }else{
+    osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, 300000 );
+  }
+}
+
+
 /*********************************************************************
  * @fn      thermometer_HandleKeys
  *
@@ -595,7 +812,8 @@ static void thermometer_ProcessOSALMsg( osal_event_hdr_t *pMsg )
  *
  * @return  none
  */
-static void thermometer_HandleKeys( uint8 shift, uint8 keys )
+//IT WAS STATIC
+void thermometer_HandleKeys( uint8 shift, uint8 keys )
 {
  
   bStatus_t status; 
@@ -647,6 +865,15 @@ static void thermometer_HandleKeys( uint8 shift, uint8 keys )
     }
     else //timer is running, so allow simulated changes
     {
+      
+      #if defined( T_RECODE ) //gj notice
+      
+        if(!recording){
+          recode_time_mins = 2;
+          record_start();
+        }
+      
+      #else     
       //change temperature, remove single precision
       if((thermometerCelcius) < 0X000175)
       {
@@ -685,7 +912,11 @@ static void thermometer_HandleKeys( uint8 shift, uint8 keys )
           }
         }
       }
+      #endif
     }
+    
+    
+    
   }
 }
 
@@ -789,7 +1020,7 @@ static void timeAppDisconnected( void )
  */
 static void peripheralStateNotificationCB( gaprole_States_t newState )
 {
- 
+  uint8 valFalse = FALSE;
   // if connected
   if ( newState == GAPROLE_CONNECTED )
   {
@@ -830,7 +1061,7 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
       }
       
       //on connection initiate disconnect timer in 20 seconds
-      osal_start_timerEx( thermometerTaskId, TH_DISCONNECT_EVT, DEFAULT_TERMINATE_DELAY );        
+      //osal_start_timerEx( thermometerTaskId, TH_DISCONNECT_EVT, DEFAULT_TERMINATE_DELAY );        
         
     } 
   }
@@ -842,7 +1073,15 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
     
     //always stop intermediate timer
     osal_stop_timerEx( thermometerTaskId, TH_PERIODIC_IMEAS_EVT ); 
-    
+	
+	//gj
+	#if defined (BMA_250)
+    // Change attribute value of Accelerometer Enable to FALSE
+    Accel_SetParameter(ACCEL_ENABLER, sizeof(valFalse), &valFalse);
+    // Stop the acceleromter
+    accelEnablerChangeCB(); // SetParameter does not trigger the callback
+    #endif
+	
   }    
   // if started
   else if ( newState == GAPROLE_STARTED )
@@ -917,15 +1156,20 @@ static void thermometerMeasIndicate(void)
     *p++ = flags;
     
     if(flags & THERMOMETER_FLAGS_FARENHEIT)
-    {
-      temperature =  (thermometerCelcius *9/5) +320;
+    {//gj
+      //temperature =  (thermometerCelcius *9/5) +320;
+      temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
+      
     }
     else
     {
-       temperature = thermometerCelcius;
+       //temperature = thermometerCelcius;
+      temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
     }
     
     temperature = 0xFF000000 | temperature;
+    
+   
       
     //osal_buffer_uint32
     p = osal_buffer_uint32( p, temperature );
@@ -995,6 +1239,26 @@ static void thermometerStoreIndications(attHandleValueInd_t* pInd)
   }  
 }
 
+double calTemp(uint32 temperature) //gj cal temp from adc voltage
+{
+  double tempcal;
+         tempcal=temperature/(8191-temperature)*4750;
+         tempcal=log(tempcal);
+         tempcal=1 / (0.0011224922 + (0.0002359132 * tempcal) + (0.000000074995733 * tempcal * tempcal * tempcal))-273.15;
+         tempcal=(tempcal*9/5+32)*100;
+         return tempcal;
+}
+
+uint32 temp2char(uint32 Data)// transfer double to char
+{
+  uint8 buff[5];
+  buff[0] = (Data/1000)%10+0x30; 
+  buff[1] = (Data/100)%10+0x30; 
+  buff[2] = (Data/10)%10+0x30;
+  buff[3] =  Data%10+0x30;
+  return (buff[0]<<6)+(buff[1]<<4)+(buff[2]<<2)+buff[3];
+}
+
 /*********************************************************************
  * @fn      thermometerMeasNotify
  *
@@ -1018,6 +1282,7 @@ static void thermometerImeasNotify(void)
       
       // temperature
       uint32 temperature;
+     
       
       //flags
       uint8 flags = thermometerFlags[thermometerFlagsIdx];
@@ -1027,15 +1292,23 @@ static void thermometerImeasNotify(void)
       
       if(flags & THERMOMETER_FLAGS_FARENHEIT)
       {
-        temperature =  (thermometerCelcius *9/5) +320;
+        //temperature =  (thermometerCelcius *9/5) +320;
+         temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
+          //gj
+//         double tempcal=calTemp(temperature);
+//         temperature=tempcal;
+//         temperature=temp2char(temperature);   
       }
       else
       {
-         temperature = thermometerCelcius;
+         //temperature = thermometerCelcius;
+         temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
       }
       
-      temperature = 0xFF000000 | temperature;
-        
+     // temperature = 0xFF000000 | temperature;
+       //gj
+    //temperature =3;  
+      
       //osal_buffer_uint32
       p = osal_buffer_uint32( p, temperature );
       
@@ -1340,7 +1613,94 @@ static void updateUI( void )
   
 }
 
+/*********************************************************************
+ * @fn      accelEnablerChangeCB
+ *
+ * @brief   Called by the Accelerometer Profile when the Enabler Attribute
+ *          is changed.
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+static void accelEnablerChangeCB( void )
+{
+  bStatus_t status = Accel_GetParameter( ACCEL_ENABLER, &accelEnabler );
 
+  if (status == SUCCESS){
+    if (accelEnabler)
+    {
+
+
+    // Initialize accelerometer
+  accInit();
+
+  P1SEL &= ~BV(7); // gpio mode
+  P1DIR &= ~BV(7); // input (pullup by default)
+  P1IEN |= BV(7); // enable P1.7 interrupts
+
+  IEN2 |= BV(4); // enable P1 interrupts   
+  IEN0 |= BV(7); // global interrupt enable
+      
+      
+      // Setup timer for accelerometer task
+      osal_start_timerEx( thermometerTaskId, KFD_ACCEL_READ_EVT, ACCEL_READ_PERIOD );
+    } else
+    {
+      // Stop the acceleromter
+      accStop();
+      osal_stop_timerEx( thermometerTaskId, KFD_ACCEL_READ_EVT);
+    }
+  } else
+  {
+    //??
+  }
+}
+
+/*********************************************************************
+ * @fn      accelRead
+ *
+ * @brief   Called by the application to read accelerometer data
+ *          and put data in accelerometer profile
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+static void accelRead( void )
+{
+
+  static int8 x, y, z;
+  int8 new_x, new_y, new_z;
+
+  // Read data for each axis of the accelerometer
+  accReadAcc(&new_x, &new_y, &new_z);
+
+  // Check if x-axis value has changed by more than the threshold value and
+  // set profile parameter if it has (this will send a notification if enabled)
+  if( (x < (new_x-ACCEL_CHANGE_THRESHOLD)) || (x > (new_x+ACCEL_CHANGE_THRESHOLD)) )
+  {
+    x = new_x;
+    Accel_SetParameter(ACCEL_X_ATTR, sizeof ( int8 ), &x);
+  }
+
+  // Check if y-axis value has changed by more than the threshold value and
+  // set profile parameter if it has (this will send a notification if enabled)
+  if( (y < (new_y-ACCEL_CHANGE_THRESHOLD)) || (y > (new_y+ACCEL_CHANGE_THRESHOLD)) )
+  {
+    y = new_y;
+    Accel_SetParameter(ACCEL_Y_ATTR, sizeof ( int8 ), &y);
+  }
+
+  // Check if z-axis value has changed by more than the threshold value and
+  // set profile parameter if it has (this will send a notification if enabled)
+  if( (z < (new_z-ACCEL_CHANGE_THRESHOLD)) || (z > (new_z+ACCEL_CHANGE_THRESHOLD)) )
+  {
+    z = new_z;
+    Accel_SetParameter(ACCEL_Z_ATTR, sizeof ( int8 ), &z);
+  }
+
+}
 
 
 

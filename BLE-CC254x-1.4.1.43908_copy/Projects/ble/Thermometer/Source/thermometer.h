@@ -62,7 +62,12 @@ extern "C"
 #define TH_START_DISCOVERY_EVT                           0x0010
 #define TH_CLOCK_UPDATE_EVT                              0x0020
 #define TH_DISCONNECT_EVT                                0x0040  
-#define TH_CCC_UPDATE_EVT                                0x0080  
+#define TH_CCC_UPDATE_EVT                                0x0080
+//gj
+#define TH_MEAS_EVT                                      0x0100 
+#define KFD_ACCEL_READ_EVT                               0x0200
+#define BMA250_FAKEkey_EVT                               0x0400  //hal_key.c magic num
+  
 /*********************************************************************
  * MACROS
  */

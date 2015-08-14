@@ -128,7 +128,10 @@ bStatus_t DevInfo_SetParameter( uint8 param, uint8 len, void *value );
  *          uint16 pointer).
  */
 extern bStatus_t DevInfo_GetParameter( uint8 param, void *value );
-
+//gj
+#if defined T_RECODE
+extern uint8 devInfoModelNumber[241];   //last is reserved 
+#endif
 /*********************************************************************
 *********************************************************************/
 

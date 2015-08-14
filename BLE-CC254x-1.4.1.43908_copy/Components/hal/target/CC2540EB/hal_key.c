@@ -87,6 +87,12 @@
 #include "hal_adc.h"
 #include "hal_key.h"
 #include "osal.h"
+#include "hal_led.h"  //gj
+extern uint8 devInfoModelNumber[241];//gj
+extern uint8 hermometerTaskId; //gj
+
+//extern void thermometer_HandleKeys( uint8 shift, uint8 keys );//gj
+
 
 #if (defined HAL_KEY) && (HAL_KEY == TRUE)
 
@@ -602,6 +608,46 @@ HAL_ISR_FUNCTION( halKeyPort0Isr, P0INT_VECTOR )
 
   return;
 }
+
+
+HAL_ISR_FUNCTION( halACCPort1Isr, P1INT_VECTOR )
+{
+  HAL_ENTER_ISR();
+
+
+   // halProcessKeyInterrupt();
+// 
+//
+//  /*
+//    Clear the CPU interrupt flag for Port_0
+//    PxIFG has to be cleared before PxIF
+//  */
+//#if defined ( CC2540_MINIDK )
+//  HAL_KEY_SW_1_PXIFG = 0;
+//  HAL_KEY_SW_2_PXIFG = 0;
+//#else
+//  HAL_KEY_SW_6_PXIFG = 0;
+//#endif
+//  HAL_KEY_CPU_PORT_0_IF = 0;
+  
+  // HalLedSet( HAL_LED_1, HAL_LED_MODE_ON );
+  devInfoModelNumber[50]+=1;
+    // clear interrupt flags (order is important)
+  P1IFG = 0;
+  P1IF = 0;
+  //thermometer_HandleKeys( 0, 0x02 ); //fake sw2
+  osal_start_timerEx( 11, 0x0400,50); //magic number taskid
+  
+  //CLEAR_SLEEP_MODE();
+
+  HAL_EXIT_ISR();
+
+  return;
+}
+
+
+
+
 
 #if !defined ( CC2540_MINIDK )
 /**************************************************************************************************
