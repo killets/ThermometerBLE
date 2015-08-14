@@ -69,7 +69,11 @@ extern "C"
 #define REF_TIME_UPDATE_SERV_UUID       0x1806  // Reference Time Update Service
 #define NEXT_DST_CHANGE_SERV_UUID       0x1807  // Next DST Change Service
 #define GLUCOSE_SERV_UUID               0x1808  // Glucose
-#define THERMOMETER_SERV_UUID           0xEE00  // Health Thermometer  0x1809
+#if defined (SHORT_THM_UUID)  
+#define THERMOMETER_SERV_UUID           0x1809  // Health Thermometer  0x1809
+#else
+  #define THERMOMETER_SERV_UUID         0xEE00  // Health Thermometer  0x1809
+#endif
 #define DEVINFO_SERV_UUID               0x180A  // Device Information
 #define NWA_SERV_UUID                   0x180B  // Network Availability
 #define HEARTRATE_SERV_UUID             0x180D  // Heart Rate

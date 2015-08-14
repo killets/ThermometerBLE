@@ -1,5 +1,5 @@
 [DebugChecksum]
-Checksum=1135226544
+Checksum=-705366272
 [Stack]
 FillEnabled=0
 OverflowWarningsEnabled=1
@@ -29,7 +29,7 @@ Bp1=_ "STD_CODE" "{$PROJ_DIR$\..\..\..\..\Components\hal\target\CC2540EB}.130.5"
 Bp2=_ "STD_LOG" "{$PROJ_DIR$\..\..\..\..\Components\hal\target\CC2540EB\hal_sleep.c}.334.3" 1 0 0 0 "" 0 "" 0
 Count=3
 [ChipconEmu]
-Stop timers on halt=0
+Stop timers on halt=1
 Leave target running=1
 [Aliases]
 Count=0

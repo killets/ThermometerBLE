@@ -307,6 +307,9 @@
           <state>HAL_ADC=TRUE</state>
           <state>T_RECODE</state>
           <state>BMA_250</state>
+          <state>xDirectAscDisp</state>
+          <state>SHORT_THM_UUID</state>
+          <state>LightOn</state>
         </option>
         <option>
           <name>CCPreprocFile</name>

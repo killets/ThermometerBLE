@@ -36,9 +36,12 @@
   Should you have any questions regarding your right to use this Software,
   contact Texas Instruments Incorporated at www.TI.com.
 **************************************************************************************************/
+//×¢Òâ²Î¿¼
+//http://processors.wiki.ti.com/index.php/Tutorial:_How_to_Create_a_Custom_Bluetooth_Smart
+//_Embedded_Application_with_the_CC2650DK
 
 //gj 0802 add chars
-#define MY_TIME_UUID               0xEE01  // Current Time
+#define MY_TIME_UUID               0xEE01  // ATT_UUID_SIZE ×¢Òâ
 #define MY_LOG_UUID                0xEE02
 
 /*********************************************************************
@@ -71,13 +74,19 @@
 /*********************************************************************
  * GLOBAL VARIABLES
  */
-
+//gj 08052015
+#if defined (SHORT_THM_UUID)
 // Thermometer service   //ATT_BT_UUID_SIZE
+CONST uint8 thermometerServUUID[ATT_BT_UUID_SIZE] =
+{ 
+  LO_UINT16(THERMOMETER_SERV_UUID), HI_UINT16(THERMOMETER_SERV_UUID)
+};
+#else
 CONST uint8 thermometerServUUID[ATT_UUID_SIZE] =  
 { 
-  //LO_UINT16(THERMOMETER_SERV_UUID), HI_UINT16(THERMOMETER_SERV_UUID)
   TI_BASE_UUID_128(THERMOMETER_SERV_UUID),
 };
+#endif
 
 // Thermometer temperature characteristic
 CONST uint8 thermometerTempUUID[ATT_BT_UUID_SIZE] =
@@ -147,9 +156,12 @@ static thermometerServiceCB_t thermometerServiceCB;
  * Profile Attributes - variables
  */
 
-// Thermometer Service attribute //ATT_BT_UUID_SIZE
+// Thermometer Service attribute //gj ATT_BT_UUID_SIZE
+#if defined (SHORT_THM_UUID)
+static CONST gattAttrType_t thermometerService = { ATT_BT_UUID_SIZE, thermometerServUUID };
+#else
 static CONST gattAttrType_t thermometerService = { ATT_UUID_SIZE, thermometerServUUID };
-
+#endif
 // Client Characteristic configuration. Each client has its own instantiation
 // of the Client Characteristic Configuration. Reads of the Client Characteristic
 // Configuration only shows the configuration for that client and writes only

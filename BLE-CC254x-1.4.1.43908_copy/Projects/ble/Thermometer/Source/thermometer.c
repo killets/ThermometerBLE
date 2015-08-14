@@ -44,8 +44,14 @@
 // hal_key中 处理函数中devInfo等待去掉注释HAL_ISR_FUNCTION
 //0730 2015 edit basic function flow
 // before 0730 basic demo measuring tem and accs
-#include <stdio.h>
 
+/*
+开机初始化， 
+
+
+*/
+
+#include <stdio.h>
 
 #include "bcomdef.h"
 #include "OSAL.h"
@@ -155,20 +161,26 @@ static uint8 recorded_cnt;
 static bool recording;
 //static uint16 recode_time_mins;
 
-#define startTIME 3  //24h 3AM
+#define startTIME_h 14  //24h 3AM
+#define startTIME_m 45  //24h 3AM
 #define	DAY             86400UL  // 24 hours * 60 minutes * 60 seconds
-static uint32 runningSeconds=0;
-static uint32 remainSeconds=0;
-static bool timeset_flag = false;
+static uint32 runningSeconds=0;  // 无用
+static uint32 remainSeconds=0;  //  倒计时到3AM还有多少秒启动record测温
+static bool timeset_flag = false; // 是否授时，是才检查是否倒计时完成
 
-#define bodyTempHiAdc 7777
-#define bodyTempLoAdc 1
-#define bodyTempTestCnt 4
-static uint8 bodyTempInrange = 0; // run 3 tests
+#define bodyTempHiAdc 7777  //体温段高，小于才继续测
+#define bodyTempLoAdc 1    
+#define bodyTempTestCnt 4   // x-1 次测试，run 3 tests
+static uint8 bodyTempInrange = 0; // 体温段测试中的次数 
 static uint8 bodyTempTest = bodyTempTestCnt; // run 3 tests
 
 
-#define bodyTempLogInteval 1000
+#define bodyTempLogInteval 120000   //每隔多长时间测一次
+        //gj 0804
+static uint16 realtime_interval=1;  //实时模式下间隔
+
+void double2char(double temp, uint8 * storeDisplay);
+double adc2temp(uint16 adcV);
 
 //#define	DAY             86400UL  // 24 hours * 60 minutes * 60 seconds
 
@@ -251,7 +263,7 @@ static uint8 advertData[] =
 };
 
 // Device name attribute value
-static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "Thermometer Sensor";
+static uint8 attDeviceName[GAP_DEVICE_NAME_LEN] = "Thermometer Sensor/n";
 
 // Bonded peer address
 static uint8 timeAppBondedAddr[B_ADDR_LEN];
@@ -309,7 +321,7 @@ static void thermometerSendStoredMeas();
 
 //gj ACC
 // Accelerometer Profile Parameters
-static uint8 accelEnabler = FALSE;
+static uint8 accelEnabler = FALSE; // 开启加速度计
 
 
 /*********************************************************************
@@ -328,10 +340,10 @@ static void thermometerStoreIndications(attHandleValueInd_t* pInd);
 static void updateUI( void );
 
 //GJ ACC
-static void accelEnablerChangeCB( void );
-static void accelRead( void );
+static void accelEnablerChangeCB( void ); // 调用初始化或者停止
+static void accelRead( void );   //读取，并更新字段值
 
-static void record_start(void);
+static void record_start(void);  //开始定时模式测量 
 
 /*******TEST MENTAS*********/
 //#include "hal_types.h"
@@ -461,12 +473,12 @@ void Thermometer_Init( uint8 task_id )
   // Setup the GAP Peripheral Role Profile
   {
     // Device doesn't start advertising until button is pressed
-    uint8 initial_advertising_enable = TRUE; //def: FALSE gj
+    uint8 initial_advertising_enable = TRUE; //def: FALSE gj  //是否开机自动广播
 
     // By setting this to zero, the device will go into the waiting state after
     // being discoverable for 30.72 second, and will not being advertising again
     // until the enabler is set back to TRUE
-    uint16 gapRole_AdvertOffTime = 0;
+    uint16 gapRole_AdvertOffTime = 0;    //实际上是180s,非30s
       
     uint8 enable_update_request = DEFAULT_ENABLE_UPDATE_REQUEST;
     uint16 desired_min_interval = DEFAULT_DESIRED_MIN_CONN_INTERVAL;
@@ -510,7 +522,7 @@ void Thermometer_Init( uint8 task_id )
     uint8 thermometerSite = THERMOMETER_TYPE_ARMPIT;
     Thermometer_SetParameter( THERMOMETER_TYPE, sizeof ( uint8 ), &thermometerSite );
     
-    thermometerIRange_t thermometerIRange= {4,60000};
+    thermometerIRange_t thermometerIRange= {0,60}; //不能为1,否则 时间间隔不能设为1，>lo
     Thermometer_SetParameter( THERMOMETER_IRANGE, sizeof ( thermometerIRange_t ),
                               &thermometerIRange );
     
@@ -571,14 +583,14 @@ void Thermometer_Init( uint8 task_id )
   
   //gj
   HalAdcInit();
-  GAP_SetParamValue(TGAP_LIM_ADV_TIMEOUT, TH_adv_TIMEOUT);
+  GAP_SetParamValue(TGAP_LIM_ADV_TIMEOUT, TH_adv_TIMEOUT);  //开机广播10s
   
   // Setup a delayed profile startup
   osal_set_event( thermometerTaskId, TH_START_DEVICE_EVT );
   //HAL_TURN_ON_LED1();
 
      //gj
-  osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, TH_wakeup_TIMEOUT);
+  osal_start_timerEx( thermometerTaskId, TH_WAKEUP_EVT, TH_wakeup_TIMEOUT); //每20s唤醒
  
 }
 
@@ -605,7 +617,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
   
   
   //gj 
-  if (events & TH_WAKEUP_EVT)
+  if (events & TH_WAKEUP_EVT) //大timer
   {
 
 
@@ -642,12 +654,16 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
    
       
     if ( gapProfileState != GAPROLE_CONNECTED ){
+#if defined(LightOn)
     HAL_TURN_ON_LED2();
+#endif
     uint8 adv_enabled = TRUE;
-    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );    
+    GAPRole_SetParameter( GAPROLE_ADVERT_ENABLED, sizeof( uint8 ), &adv_enabled );    //重新广播 
     }
     else
+      #if defined(LightOn)
      HAL_TURN_OFF_LED2();
+      #endif
 
     runningSeconds++;
     if(timeset_flag&&(runningSeconds==remainSeconds/(TH_wakeup_TIMEOUT/1000)))
@@ -678,15 +694,22 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
       osal_start_timerEx( thermometerTaskId, TH_testBodyRange_EVT, 5000 );
       else
       {
-        if(bodyTempInrange>=2){
+        if(bodyTempInrange>=2){ //2是magic number，3次测试2次以上才有效
           //start measurement
+          #if defined(LightOn)
              HAL_TURN_ON_LED1();
-          if(!recording){
+          #endif
+          if(!recording){ //！已启动
+            
           record_start();
         }
         }
         else
+          #if defined(LightOn)
           HAL_TURN_ON_LED2();
+          #else
+           asm("Nop");
+          #endif
       }
       
     return (events ^ TH_testBodyRange_EVT);
@@ -695,19 +718,30 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     //gj temperature mesure 
   if ( events & TH_MEAS_EVT )
   {   
-     if(recorded_cnt < THERMOMETER_MYLOG_LEN/2){
+     if(recorded_cnt < THERMOMETER_MYLOG_LEN/2){ //每次2个字节
         osal_start_timerEx( thermometerTaskId, TH_MEAS_EVT, bodyTempLogInteval );
       }
      else{
         recorded_cnt = 0;
         recording = 0;
+        #if defined(LightOn)
+        HAL_TURN_OFF_LED1();
+        #endif
         return (events ^ TH_MEAS_EVT);
       }
 
     if( recording == 1 && recorded_cnt < THERMOMETER_MYLOG_LEN/2 ){
-      uint32 temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
+      uint16 adcV = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
+
+      #if defined( DirectAscDisp ) 
+      double temp = adc2temp(adcV);
+      double2char(temp,&thermometerMyLog[recorded_cnt*2]);
+      #else
+      double temp = adc2temp(adcV);
+      uint16 temperature = (uint16)(temp*10);
       thermometerMyLog[recorded_cnt*2] = LO_UINT16( temperature );
       thermometerMyLog[recorded_cnt*2+1] = HI_UINT16( temperature );
+      #endif     
     }
     
     recorded_cnt++;
@@ -748,7 +782,9 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
   
     if ( events & BMA250_FAKEkey_EVT )
   {
+    #if defined(LightOn)
     HalLedSet( HAL_LED_1, HAL_LED_MODE_TOGGLE );
+    #endif
     thermometer_HandleKeys( 0, 0x02 ); //fake sw2
     
     // return unprocessed events
@@ -809,14 +845,14 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
     return ( events ^ TH_START_DISCOVERY_EVT );
   }
   
-  //periodic indications - if enabled
+  //periodic indications - if enabled    //indication模式
   if ( events & TH_PERIODIC_MEAS_EVT )
   {
     // Perform periodic application task
-    performPeriodicTask();
+    performPeriodicTask();  
     return (events ^ TH_PERIODIC_MEAS_EVT);
   } 
-  //periodic notifications for IMEAS
+  //periodic notifications for IMEAS   //notifications
   if ( events & TH_PERIODIC_IMEAS_EVT )
   {
     // Perform periodic application task
@@ -842,7 +878,7 @@ uint16 Thermometer_ProcessEvent( uint8 task_id, uint16 events )
 
   
   
-  if ( events & TH_CCC_UPDATE_EVT )
+  if ( events & TH_CCC_UPDATE_EVT ) 
     
     //This event is triggered when CCC is enabled
     if (gapProfileState == GAPROLE_CONNECTED)
@@ -1187,7 +1223,7 @@ static void peripheralStateNotificationCB( gaprole_States_t newState )
       {
         osal_start_timerEx( thermometerTaskId, TH_START_DISCOVERY_EVT, DEFAULT_DISCOVERY_DELAY );
       }
-        //gj notice here
+        //gj notice here  //自动断连
       //on connection initiate disconnect timer in 20 seconds
       //osal_start_timerEx( thermometerTaskId, TH_DISCONNECT_EVT, DEFAULT_TERMINATE_DELAY );        
         
@@ -1367,25 +1403,6 @@ static void thermometerStoreIndications(attHandleValueInd_t* pInd)
   }  
 }
 
-double calTemp(uint32 temperature) //gj cal temp from adc voltage
-{
-  double tempcal;
-         tempcal=temperature/(8191-temperature)*4750;
-         tempcal=log(tempcal);
-         tempcal=1 / (0.0011224922 + (0.0002359132 * tempcal) + (0.000000074995733 * tempcal * tempcal * tempcal))-273.15;
-         tempcal=(tempcal*9/5+32)*100;
-         return tempcal;
-}
-
-uint32 temp2char(uint32 Data)// transfer double to char
-{
-  uint8 buff[5];
-  buff[0] = (Data/1000)%10+0x30; 
-  buff[1] = (Data/100)%10+0x30; 
-  buff[2] = (Data/10)%10+0x30;
-  buff[3] =  Data%10+0x30;
-  return (buff[0]<<6)+(buff[1]<<4)+(buff[2]<<2)+buff[3];
-}
 
 /*********************************************************************
  * @fn      thermometerMeasNotify
@@ -1433,11 +1450,21 @@ static void thermometerImeasNotify(void)
          temperature = HalAdcRead(HAL_ADC_CHANNEL_5,HAL_ADC_RESOLUTION_14);
       }
       
-     // temperature = 0xFF000000 | temperature;
+       //temperature = 0xFF000000 | temperature;
        //gj
-    //temperature =3;  
+      //temperature =0;
       
+      #if defined( DirectAscDisp ) 
+      double temp = adc2temp(temperature);
+      uint8 result[2];
+      double2char(temp,result);
+      temperature=(uint32)BUILD_UINT16( result[0], result[1]);
       //osal_buffer_uint32
+     #elif defined (SHORT_THM_UUID)
+      double temp = adc2temp(temperature);
+      temperature = 0xFF000000 |(uint32)(temp*10);  //不知为啥或，但不影响手机APP显示温度
+      #endif
+      
       p = osal_buffer_uint32( p, temperature );
       
       //timestamp
@@ -1483,7 +1510,7 @@ static void thermometerImeasNotify(void)
  *
  * @return  none
  */
-static void thermometerCB(uint8 event)
+static void thermometerCB(uint8 event)  //处理来自service的事件，比如某个值改了或开关使能
 {
   switch (event)
   {
@@ -1524,6 +1551,7 @@ static void thermometerCB(uint8 event)
     } 
     break;  
     
+    
     //gj add 0802 for time set event
   case THERMOMETER_MYTIME_SET:
     {
@@ -1537,11 +1565,11 @@ static void thermometerCB(uint8 event)
     runningSeconds = 0; // IMPORTATANT
     
     UTCTimeStruct time3AM = mytime;    
-    time3AM.hour=startTIME;
-    time3AM.minutes=0;
+    time3AM.hour=startTIME_h;
+    time3AM.minutes=startTIME_m;
     time3AM.seconds=0;
     
-    if(mytime.hour > startTIME)
+    if(mytime.hour > startTIME_h)
       remainSeconds= DAY+ osal_ConvertUTCSecs( &time3AM )- mytimeSnds;
     else
       remainSeconds= osal_ConvertUTCSecs( &time3AM )- mytimeSnds;     
@@ -1549,6 +1577,13 @@ static void thermometerCB(uint8 event)
   //  printf("%d ", remainSeconds);
     
     break;
+    }
+    
+  case THERMOMETER_INTERVAL_SET:
+    { 
+  //read stored interval value
+  Thermometer_GetParameter( THERMOMETER_INTERVAL, &realtime_interval ); 
+  break;
     }
    
   default:  
@@ -1600,11 +1635,8 @@ static void performPeriodicTask( void )
  */
 static void performPeriodicImeasTask( void )
 {
-  //gj 0804
-  uint8 measure_interval;
-  //read stored interval value
-  Thermometer_GetParameter( THERMOMETER_INTERVAL, &measure_interval ); 
-  int32 n32 = ((uint32)(measure_interval)) * (1000); 
+  uint32 n32 = ((uint32)(realtime_interval)) * (1000); 
+  
   if (gapProfileState == GAPROLE_CONNECTED)
   {
     // send thermometer measurement notification
@@ -1826,7 +1858,7 @@ static void accelEnablerChangeCB( void )
  *
  * @return  none
  */
-static void accelRead( void )
+static void accelRead( void )  //读XYZ，如果超限，则更新，且当XYZ listen notify时发送notify
 {
 
   static int8 x, y, z;
@@ -1865,3 +1897,54 @@ static void accelRead( void )
 
 /*********************************************************************
 *********************************************************************/
+
+
+double adc2temp(uint16 adcV)
+{
+  //double 32bit
+  double res = (double)adcV/(8191-adcV);
+  res = res*4750;
+  double Temp = log(res);
+  //Temp = 1.0 / (0.0011224922 + (0.00023591320 * Temp) + (0.000000074995733 * Temp * Temp * Temp));
+  Temp=1.0/(0.00102228469493972417862909324051+0.00025316455696202531645569620253165*Temp);
+  Temp = (Temp - 273.15);  // Convert Kelvin to Celsius
+  return Temp; //eg. return 36.61375 
+}
+
+//2bit 37.00
+void double2char(double temp, uint8 * storeDisplay)
+{
+  uint32 x = (uint32) (temp*100);  //eg. 36.61375->3661
+  uint8 a,b,c,d;  
+  a = x/1000;
+  #if defined(LightOn)
+  if(a>10) HAL_TURN_ON_LED1(); //todo led2 
+  #endif
+  x= x-a*1000;
+  b= x/100;
+  x= x-b*100;
+  storeDisplay[0]=a*16+b;
+  c= x/10;
+  d=x%10;
+  storeDisplay[1]=c*16+d;
+}
+
+//double calTemp(uint32 temperature) //gj cal temp from adc voltage
+//{
+//  double tempcal;
+//         tempcal=temperature/(8191-temperature)*4750;
+//         tempcal=log(tempcal);
+//         tempcal=1 / (0.0011224922 + (0.0002359132 * tempcal) + (0.000000074995733 * tempcal * tempcal * tempcal))-273.15;
+//         tempcal=(tempcal*9/5+32)*100;
+//         return tempcal;
+//}
+
+uint32 temp2char(uint32 Data)// transfer double to char
+{
+  uint8 buff[5];
+  buff[0] = (Data/1000)%10+0x30; 
+  buff[1] = (Data/100)%10+0x30; 
+  buff[2] = (Data/10)%10+0x30;
+  buff[3] =  Data%10+0x30;
+  return (buff[0]<<6)+(buff[1]<<4)+(buff[2]<<2)+buff[3];
+}

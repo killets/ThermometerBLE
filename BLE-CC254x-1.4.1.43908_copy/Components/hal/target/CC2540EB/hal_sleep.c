@@ -454,128 +454,128 @@ void halSleep( uint32 osal_timeout )
 }
 
 
-void halSleep_Mentas( uint32 osal_timeout )
-{
-  uint32 timeout;
-  uint32 llTimeout;
-  uint32 sleepTimer;
-
-  // max allowed sleep time in ms
-  if (osal_timeout > MAX_SLEEP_TIMEOUT)
-  {
-    osal_timeout = MAX_SLEEP_TIMEOUT;
-  }
-
-  // get LL timeout value already converted to 32kHz ticks
-  //LL_TimeToNextRfEvent( &sleepTimer, &llTimeout );
-
-  // check if no OSAL timeout
-  // Note: If the next wake event is due to an OSAL timeout, then wakeForRF
-  //       will already be FALSE, and the call to LL_TimeToNExtRfEvent will
-  //       already have taken a snapshot of the Sleep Timer.
-
-      // the next ST wake time is not due to radio
-      wakeForRF = FALSE;
-
-
-
-  // HAL_SLEEP_PM3 is entered only if the timeout is zero
-  halPwrMgtMode =  HAL_SLEEP_TIMER;
-
-
-  // check if sleep should be entered
-
-    halIntState_t ien0, ien1, ien2;
-
-    HAL_ASSERT( HAL_INTERRUPTS_ARE_ENABLED() );
-    HAL_DISABLE_INTERRUPTS();
-
-    // check if radio allows sleep, and if so, preps system for shutdown
-    if ( halSleepPconValue && ( LL_PowerOffReq(halPwrMgtMode) == LL_SLEEP_REQUEST_ALLOWED ) )
-    {
-#if ((defined HAL_KEY) && (HAL_KEY == TRUE))
-      // get peripherals ready for sleep
-      HalKeyEnterSleep();
-#endif // ((defined HAL_KEY) && (HAL_KEY == TRUE))
-
-#ifdef HAL_SLEEP_DEBUG_LED
-      HAL_TURN_OFF_LED3();
-#else
-      // use this to turn LEDs off during sleep
-      HalLedEnterSleep();
-#endif // HAL_SLEEP_DEBUG_LED
-
-      // enable sleep timer interrupt
-      if (timeout != 0)
-      {
-        // check if the time to next wake event is greater than max sleep time
-        if (timeout > MAX_SLEEP_TIME )
-        {
-          // it is, so limit to max allowed sleep time (~510s)
-          halSleepSetTimer( sleepTimer, MAX_SLEEP_TIME );
-        }
-        else // not more than allowed sleep time
-        {
-          // so set sleep time to actual amount
-          halSleepSetTimer( sleepTimer, timeout );
-        }
-      }
-
-      // prep CC254x power mode
-      HAL_SLEEP_PREP_POWER_MODE(halPwrMgtMode);
-
-      // save interrupt enable registers and disable all interrupts
-      HAL_SLEEP_IE_BACKUP_AND_DISABLE(ien0, ien1, ien2);
-      HAL_ENABLE_INTERRUPTS();
-
-      // set CC254x power mode; interrupts are disabled after this function
-      // Note: Any ISR that could wake the device from sleep needs to use
-      //       CLEAR_SLEEP_MODE(), which will clear the halSleepPconValue flag
-      //       used to enter sleep mode, thereby preventing the device from
-      //       missing this interrupt.
-      HAL_SLEEP_SET_POWER_MODE();
-
-
-      // check if ST interrupt pending, and if not, clear wakeForRF flag
-      // Note: This is needed in case we are not woken by the sleep timer but
-      //       by for example a key press. In this case, the flag has to be
-      //       cleared as we are not just before a radio event.
-      // Note: There is the possiblity that we may wake from an interrupt just
-      //       before the sleep timer would have woken us just before a radio
-      //       event, in which case power will be wasted as we will probably
-      //       enter this routine one or more times before the radio event.
-      //       However, this is presumably unusual, and isn't expected to have
-      //       much impact on average power consumption.
-      if ( (wakeForRF == TRUE) && !(IRCON & 0x80) )
-      {
-        wakeForRF = FALSE;
-      }
-
-      // restore interrupt enable registers
-      HAL_SLEEP_IE_RESTORE(ien0, ien1, ien2);
-
-      // power on the LL; blocks until completion
-      // Note: This is done here to ensure the 32MHz XOSC has stablized, in
-      //       case it is needed (e.g. the ADC is used by the joystick).
-      LL_PowerOnReq( (halPwrMgtMode == CC2540_PM3), wakeForRF );
-
-#ifdef HAL_SLEEP_DEBUG_LED
-      HAL_TURN_ON_LED3();
-#else //!HAL_SLEEP_DEBUG_LED
-      // use this to turn LEDs back on after sleep
-      HalLedExitSleep();
-#endif // HAL_SLEEP_DEBUG_LED
-
-#if ((defined HAL_KEY) && (HAL_KEY == TRUE))
-      // handle peripherals
-      (void)HalKeyExitSleep();
-#endif // ((defined HAL_KEY) && (HAL_KEY == TRUE))
-    }
-
-    HAL_ENABLE_INTERRUPTS();
-
-  return;
-}
+//void halSleep_Mentas( uint32 osal_timeout )
+//{
+//  uint32 timeout;
+//  uint32 llTimeout;
+//  uint32 sleepTimer;
+//
+//  // max allowed sleep time in ms
+//  if (osal_timeout > MAX_SLEEP_TIMEOUT)
+//  {
+//    osal_timeout = MAX_SLEEP_TIMEOUT;
+//  }
+//
+//  // get LL timeout value already converted to 32kHz ticks
+//  //LL_TimeToNextRfEvent( &sleepTimer, &llTimeout );
+//
+//  // check if no OSAL timeout
+//  // Note: If the next wake event is due to an OSAL timeout, then wakeForRF
+//  //       will already be FALSE, and the call to LL_TimeToNExtRfEvent will
+//  //       already have taken a snapshot of the Sleep Timer.
+//
+//      // the next ST wake time is not due to radio
+//      wakeForRF = FALSE;
+//
+//
+//
+//  // HAL_SLEEP_PM3 is entered only if the timeout is zero
+//  halPwrMgtMode =  HAL_SLEEP_TIMER;
+//
+//
+//  // check if sleep should be entered
+//
+//    halIntState_t ien0, ien1, ien2;
+//
+//    HAL_ASSERT( HAL_INTERRUPTS_ARE_ENABLED() );
+//    HAL_DISABLE_INTERRUPTS();
+//
+//    // check if radio allows sleep, and if so, preps system for shutdown
+//    if ( halSleepPconValue && ( LL_PowerOffReq(halPwrMgtMode) == LL_SLEEP_REQUEST_ALLOWED ) )
+//    {
+//#if ((defined HAL_KEY) && (HAL_KEY == TRUE))
+//      // get peripherals ready for sleep
+//      HalKeyEnterSleep();
+//#endif // ((defined HAL_KEY) && (HAL_KEY == TRUE))
+//
+//#ifdef HAL_SLEEP_DEBUG_LED
+//      HAL_TURN_OFF_LED3();
+//#else
+//      // use this to turn LEDs off during sleep
+//      HalLedEnterSleep();
+//#endif // HAL_SLEEP_DEBUG_LED
+//
+//      // enable sleep timer interrupt
+//      if (timeout != 0)
+//      {
+//        // check if the time to next wake event is greater than max sleep time
+//        if (timeout > MAX_SLEEP_TIME )
+//        {
+//          // it is, so limit to max allowed sleep time (~510s)
+//          halSleepSetTimer( sleepTimer, MAX_SLEEP_TIME );
+//        }
+//        else // not more than allowed sleep time
+//        {
+//          // so set sleep time to actual amount
+//          halSleepSetTimer( sleepTimer, timeout );
+//        }
+//      }
+//
+//      // prep CC254x power mode
+//      HAL_SLEEP_PREP_POWER_MODE(halPwrMgtMode);
+//
+//      // save interrupt enable registers and disable all interrupts
+//      HAL_SLEEP_IE_BACKUP_AND_DISABLE(ien0, ien1, ien2);
+//      HAL_ENABLE_INTERRUPTS();
+//
+//      // set CC254x power mode; interrupts are disabled after this function
+//      // Note: Any ISR that could wake the device from sleep needs to use
+//      //       CLEAR_SLEEP_MODE(), which will clear the halSleepPconValue flag
+//      //       used to enter sleep mode, thereby preventing the device from
+//      //       missing this interrupt.
+//      HAL_SLEEP_SET_POWER_MODE();
+//
+//
+//      // check if ST interrupt pending, and if not, clear wakeForRF flag
+//      // Note: This is needed in case we are not woken by the sleep timer but
+//      //       by for example a key press. In this case, the flag has to be
+//      //       cleared as we are not just before a radio event.
+//      // Note: There is the possiblity that we may wake from an interrupt just
+//      //       before the sleep timer would have woken us just before a radio
+//      //       event, in which case power will be wasted as we will probably
+//      //       enter this routine one or more times before the radio event.
+//      //       However, this is presumably unusual, and isn't expected to have
+//      //       much impact on average power consumption.
+//      if ( (wakeForRF == TRUE) && !(IRCON & 0x80) )
+//      {
+//        wakeForRF = FALSE;
+//      }
+//
+//      // restore interrupt enable registers
+//      HAL_SLEEP_IE_RESTORE(ien0, ien1, ien2);
+//
+//      // power on the LL; blocks until completion
+//      // Note: This is done here to ensure the 32MHz XOSC has stablized, in
+//      //       case it is needed (e.g. the ADC is used by the joystick).
+//      LL_PowerOnReq( (halPwrMgtMode == CC2540_PM3), wakeForRF );
+//
+//#ifdef HAL_SLEEP_DEBUG_LED
+//      HAL_TURN_ON_LED3();
+//#else //!HAL_SLEEP_DEBUG_LED
+//      // use this to turn LEDs back on after sleep
+//      HalLedExitSleep();
+//#endif // HAL_SLEEP_DEBUG_LED
+//
+//#if ((defined HAL_KEY) && (HAL_KEY == TRUE))
+//      // handle peripherals
+//      (void)HalKeyExitSleep();
+//#endif // ((defined HAL_KEY) && (HAL_KEY == TRUE))
+//    }
+//
+//    HAL_ENABLE_INTERRUPTS();
+//
+//  return;
+//}
 
 
 /*******************************************************************************
